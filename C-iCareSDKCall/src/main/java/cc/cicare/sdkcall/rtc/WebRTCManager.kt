@@ -1,11 +1,10 @@
 package cc.cicare.sdkcall.rtc
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.os.Build
 import android.util.Log
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.*
 import kotlin.coroutines.resumeWithException
@@ -74,6 +73,7 @@ class WebRTCManager(
         peerConnection.addTrack(audioTrack)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createOffer(): SessionDescription = suspendCancellableCoroutine { cont ->
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
@@ -149,6 +149,7 @@ class WebRTCManager(
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createAnswer(): SessionDescription = suspendCancellableCoroutine { cont ->
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
@@ -233,7 +234,7 @@ class WebRTCManager(
     }
 
     fun setMicEnabled(enabled: Boolean) {
-        audioTrack?.setEnabled(enabled)
+        audioTrack.setEnabled(enabled)
     }
 
     fun close() {

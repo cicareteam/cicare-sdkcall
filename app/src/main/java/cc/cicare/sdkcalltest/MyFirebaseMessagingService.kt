@@ -1,15 +1,7 @@
 package cc.cicare.sdkcalltest
 
-import android.app.Activity
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Person
-import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
-import android.os.Build
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -64,7 +56,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         const val ACTION_ANSWER = "ACTION_ANSWER"
         const val ACTION_DECLINE = "ACTION_DECLINE"
         const val EXTRA_TOKEN_ANSWER = "token_answer"
-        private val ringToneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        //private val ringToneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
     }
 }
