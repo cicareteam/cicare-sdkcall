@@ -56,8 +56,8 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 from(components["release"])
 
-                groupId = "cc.cicare"
-                artifactId = "sdkcall"
+                groupId = "cc.c-icare.gitlab.annas"
+                artifactId = "c-icare-sdk-call"
                 version = project.version.toString()
             }
         }
