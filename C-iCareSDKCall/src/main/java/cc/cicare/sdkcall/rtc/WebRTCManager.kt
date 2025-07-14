@@ -149,23 +149,35 @@ class WebRTCManager(
         }
     }
 
-    fun createAnswer() {
+    suspend fun createAnswer(): SessionDescription = suspendCancellableCoroutine { cont ->
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
         }
+
         peerConnection.createAnswer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(sdp: SessionDescription?) {
-                sdp?.let {
+                if (sdp != null) {
                     peerConnection.setLocalDescription(object : SdpObserverAdapter() {
                         override fun onSetSuccess() {
-                            callback.onLocalSdpCreated(it)
+                            cont.resume(sdp) {} // resume coroutine with sdp
                         }
-                    }, it)
+
+                        override fun onSetFailure(error: String?) {
+                            cont.resumeWithException(RuntimeException("SetLocalDescription failed: $error"))
+                        }
+                    }, sdp)
+                } else {
+                    cont.resumeWithException(RuntimeException("SDP is null"))
                 }
+            }
+
+            override fun onCreateFailure(error: String?) {
+                cont.resumeWithException(RuntimeException("CreateAnswer failed: $error"))
             }
         }, constraints)
     }
+
 
     fun setAudioOutputToSpeaker(enabled: Boolean) {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager

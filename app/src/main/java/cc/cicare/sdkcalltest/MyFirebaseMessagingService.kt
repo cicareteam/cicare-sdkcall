@@ -44,11 +44,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val data = message.data
         val callerName = data["caller_name"] ?: "Unknown"
         val tokenAnswer = data["token_receive"] ?: return
+        val fromPhone: Boolean = data["from_phone"]?.toBoolean() ?: false
         val server = data["server"] ?: return
 
         val intent = Intent(this, IncomingCallActivity::class.java).apply {
             putExtra("caller_name", callerName)
             putExtra("token_receive", tokenAnswer)
+            putExtra("from_phone", fromPhone)
             putExtra("server", server)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }

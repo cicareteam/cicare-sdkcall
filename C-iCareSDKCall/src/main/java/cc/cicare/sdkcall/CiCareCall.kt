@@ -30,6 +30,7 @@ class CiCareCall(
 ): WebRTCEventCallback {
     private lateinit var socketManager: SocketManager
     private lateinit var webrtcManager: WebRTCManager
+    private var isFromPhone: Boolean = false
 
     /**
      * Initialize a new outgoing call.
@@ -57,12 +58,14 @@ class CiCareCall(
      *
      * @param server The signaling server address.
      * @param token The authentication token for incoming / receiving call.
+     * @param isFromPhone The flagging if the call from phone
      */
-    fun initReceive(server: String, token: String) {
+    fun initReceive(server: String, token: String, isFromPhone: Boolean? = false) {
         webrtcManager = WebRTCManager(context, this)
         socketManager = SocketManager(callEventListener, webrtcManager)
         socketManager.connect(server, token)
         socketManager.send("RINGING_CALL", JSONObject().apply {})
+        this.isFromPhone = !isFromPhone!!
     }
 
     /**
@@ -72,11 +75,15 @@ class CiCareCall(
     suspend fun answerCall() {
         webrtcManager.init()
         webrtcManager.initMic()
+
+        var sdp = webrtcManager.createOffer()
+        if (isFromPhone)
+            sdp = webrtcManager.createAnswer();
         socketManager.send("ANSWER_CALL", JSONObject().apply {
             put("is_caller", false)
             put("sdp", JSONObject().apply {
-                put("type", "offer")
-                put("sdp", webrtcManager.createOffer().description)
+                put("type", sdp.type)
+                put("sdp", sdp.description)
             })
         })
     }

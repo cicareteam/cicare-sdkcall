@@ -55,6 +55,7 @@ dependencies {
     implementation libs.androidx.activity
     implementation libs.androidx.constraintlayout
     implementation(project(":C-iCareSDKCall"))
+    //implementation("cc.c-icare.gitlab.annas:c-icare-sdk-call:Tag")
     implementation("io.github.webrtc-sdk:android:125.6422.07")
     implementation "androidx.navigation:navigation-compose:2.7.5"
     implementation("com.squareup.retrofit2:retrofit:2.9.0")

@@ -77,6 +77,7 @@ class IncomingCallActivity : ComponentActivity(), CallEventListener {
         val callerName = intent.getStringExtra("caller_name") ?: "Unknown"
         val tokenAnswer = intent.getStringExtra("token_receive") ?: return
         val server = intent.getStringExtra("server") ?: return
+        val fromPhone = intent.getBooleanExtra("from_phone", false)
 
         sdkCall = CiCareCall(this, this)
 
@@ -90,7 +91,7 @@ class IncomingCallActivity : ComponentActivity(), CallEventListener {
         }*/
         sdkCall.checkMicPermission(this)
 
-        sdkCall.initReceive(server, tokenAnswer)
+        sdkCall.initReceive(server, tokenAnswer, fromPhone)
         enableEdgeToEdge()
         setContent {
             MainApp(
