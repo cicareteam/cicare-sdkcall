@@ -10,10 +10,36 @@ import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
 import android.os.Build
+import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        val session = UserSessionManager(this)
+        val userId = session.getUserId()
+
+        if (userId != null && userId > 0) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val response = ApiClient.api.saveToken(TokenSaveRequest(userId, token))
+                    if (response.isSuccessful) {
+                        Log.d("FCM", "Token saved")
+                    } else {
+                        Log.e("FCM", "Token failed: ${response.code()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e("FCM", "Error saving token: ${e.message}")
+                }
+            }
+        } else {
+            Log.w("FCM", "User ID not found, cannot save token.")
+        }
+    }
+
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         val callerName = data["caller_name"] ?: "Unknown"

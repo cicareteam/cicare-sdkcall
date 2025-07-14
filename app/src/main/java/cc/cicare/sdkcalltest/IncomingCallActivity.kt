@@ -365,26 +365,26 @@ class IncomingCallActivity : ComponentActivity(), CallEventListener {
                             modifier = Modifier.size(32.dp)
                         )
                     }
-                }
 
-                Button(
-                    onClick = {
-                        coroutineScope.launch { // ✅ Panggil suspend function di sini
-                            try {
-                                sdkCall?.hangupCall()
-                                stopSystemRingtone()
-                                finish()
-                            } catch (e: Exception) {
-                                // tangani error kalau perlu
+                    Button(
+                        onClick = {
+                            coroutineScope.launch { // ✅ Panggil suspend function di sini
+                                try {
+                                    sdkCall?.hangupCall()
+                                    stopSystemRingtone()
+                                    finish()
+                                } catch (e: Exception) {
+                                    // tangani error kalau perlu
+                                }
                             }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Call, contentDescription = "Hangup", tint = Color.White)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Hangup", color = Color.White)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = "Hangup", tint = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Hangup", color = Color.White)
+                    }
                 }
             }
         }

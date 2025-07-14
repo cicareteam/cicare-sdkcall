@@ -23,6 +23,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Hearing
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -63,6 +67,10 @@ import retrofit2.http.Query
 class MainActivity : ComponentActivity(), CallEventListener {
 
     private lateinit var sdkCall: CiCareCall
+
+    private var callState = mutableStateOf<CallState?>(null)
+
+    private var calldest = mutableStateOf<String>("")
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -145,7 +153,7 @@ class MainActivity : ComponentActivity(), CallEventListener {
     }
 
     override fun onCallStateChanged(callState: CallState) {
-        Log.i("CALL", callState.name)
+        this.callState.value = callState
     }
 
     override fun onDestroy() {
@@ -163,6 +171,301 @@ class MainActivity : ComponentActivity(), CallEventListener {
             }
         }*/
     }
+
+
+
+    @Composable
+    fun MainApp(sdkCall: CiCareCall) {
+        val navController = rememberNavController()
+        //val callPayload = remember { AppState.callPayload }
+
+        val context = LocalContext.current
+        val sessionManager = remember { UserSessionManager(context) }
+        val savedUserId = sessionManager.getUserId()
+        val savedUserName = sessionManager.getUserName()
+        var userId by remember { mutableStateOf(savedUserId ?: 0) }
+        var username by remember { mutableStateOf(savedUserName ?: "") }
+        var password by remember { mutableStateOf("") }
+
+        val startDestination = if (savedUserId != null && savedUserId > 0) {
+            Screen.Home.route
+        } else {
+            Screen.Login.route
+        }
+
+        NavHost(navController, startDestination = startDestination) {
+            composable(Screen.Login.route) {
+                LoginScreen(
+                    username = username,
+                    password = password,
+                    onUsernameChange = { username = it },
+                    onPasswordChange = { password = it },
+                    onLoginSuccess = { user ->
+                        userId = user.id
+                        val sessionManager = UserSessionManager(context)
+                        sessionManager.saveUserId(user.id, user.username)
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable(Screen.Home.route) {
+                HomeScreen(userId, username, navController)
+            }
+
+            composable(Screen.App2Phone.route) {
+                App2Phone(userId, username, sdkCall, navController)
+            }
+
+            composable(Screen.App2App.route) {
+                App2App(userId, username, sdkCall, navController)
+            }
+            composable(Screen.Call.route) {
+                CallScreen(calldest, sdkCall, navController, callState)
+            }
+        }
+    }
+
+    @Composable
+    fun CallScreen(
+        callerName: State<String>,
+        sdkCall: CiCareCall?,
+        navController: NavHostController,
+        callState: State<CallState?>
+    ) {
+        val coroutineScope = rememberCoroutineScope()
+        var timer by remember { mutableStateOf("00:00") }
+        val volumeLevel = remember { mutableStateOf(0.1f) } // dari 0.0 (diam) ke 1.0 (keras)
+        var isMicMuted by remember { mutableStateOf(false) }
+        var isOnLoadSpeaker by remember { mutableStateOf(false) }
+
+        LaunchedEffect(callState.value) {
+            if (callState.value === CallState.ANSWERED) {
+                val startTime = System.currentTimeMillis()
+                while (callState.value === CallState.ANSWERED) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val seconds = (elapsed / 1000).toInt()
+                    val minutes = seconds / 60
+                    val remainingSeconds = seconds % 60
+                    timer = String.format("%02d:%02d", minutes, remainingSeconds)
+                    delay(1000)
+                }
+            } else if (callState.value === CallState.ENDED) {
+                navController.popBackStack()
+            }
+        }
+
+        // Animasi dari volume
+        val animatedScale by animateFloatAsState(
+            targetValue = 1f + (volumeLevel.value * 1.5f),
+            animationSpec = tween(200),
+            label = "volumeScale"
+        )
+
+        val animatedAlpha by animateFloatAsState(
+            targetValue = 0.3f + (volumeLevel.value * 0.5f),
+            animationSpec = tween(200),
+            label = "volumeAlpha"
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.DarkGray)
+                .padding(bottom = 50.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(100.dp))
+            Column(
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "${callerName.value}",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(
+                    text = "CALL ${callState.value.toString()}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = timer,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            Spacer(modifier = Modifier.height(150.dp))
+
+            CallPulseAnimation(
+                scaleC = animatedScale,
+                alphaC = animatedAlpha
+            )
+
+            Spacer(modifier = Modifier.height(250.dp))
+
+            Column(
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 30.dp)
+                ) {
+                    // Tombol Mute/Unmute Mic
+                    IconButton(
+                        onClick = {
+                            isMicMuted = !isMicMuted
+                            sdkCall?.setMute(!isMicMuted)
+                        },
+                        modifier = Modifier
+                            .size(32.dp) // ✅ Kontrol ukuran tombol
+                            .background(
+                                color = if (isMicMuted) Color.Gray else Color.Green,
+                                shape = CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = if (isMicMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                            contentDescription = "Toggle Mic",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    // Tombol Toggle Speaker
+                    IconButton(
+                        onClick = {
+                            isOnLoadSpeaker = !isOnLoadSpeaker
+                            if (isOnLoadSpeaker)
+                                sdkCall?.setOnLoadSpeaker()
+                            else
+                                sdkCall?.setOnPhoneSpeaker()
+                        },
+                        modifier = Modifier
+                            .size(32.dp) // ✅ Kontrol ukuran tombol
+                            .background(
+                                color = if (isOnLoadSpeaker) Color.Green else Color.Gray,
+                                shape = CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = if (isOnLoadSpeaker) Icons.Filled.VolumeUp else Icons.Filled.Hearing,
+                            contentDescription = "Toggle Speaker",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            coroutineScope.launch { // ✅ Panggil suspend function di sini
+                                try {
+                                    sdkCall?.hangupCall()
+                                    navController.popBackStack()
+                                } catch (e: Exception) {
+                                    // tangani error kalau perlu
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = "Hangup", tint = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Hangup", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+
+
+
+    @Composable
+    fun App2App(userId: Int, currentUsername: String, sdkCall: CiCareCall, navController: NavHostController) {
+        var destination by remember { mutableStateOf<UserOnline?>(null) }
+        var loading by remember { mutableStateOf(false) }
+        var context = LocalContext.current
+        val coroutineScope = rememberCoroutineScope()
+        var onlineUsers by remember { mutableStateOf<List<UserOnline>>(emptyList()) }
+
+        LaunchedEffect(Unit) {
+            try {
+                val response = ApiClient.api.getUserOnline(userId = userId)
+                if (response.isSuccessful) {
+                    onlineUsers = response.body() ?: emptyList()
+                    Log.i("ONLINE_USERS","")
+                    response.body()?.get(0)?.name?.let { Log.i("ONLINE_USERS", it) }
+                } else {
+                    Log.e("API", "Failed: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("API", "Exception: ${e.message}")
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("App to App", style = MaterialTheme.typography.headlineSmall)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (onlineUsers.isNotEmpty()) {
+                OnlineUserDropdown(
+                    users = onlineUsers,
+                    selectedUser = destination,
+                    onUserSelected = { destination = it }
+                )
+            } else {
+                Text("No users are online yet", style = MaterialTheme.typography.bodyLarge)
+            }
+
+            Button(onClick = {
+                coroutineScope.launch {
+                    loading = true
+                    if (destination === null) {
+                        Toast.makeText(context, "Pilih user tujuan terlebih dahulu", Toast.LENGTH_SHORT).show()
+                    }
+                    destination?.let { target ->
+                        try {
+                            val response = ApiClient.api.requestCall(CallRequest(userId, true, ""+target.id))
+                            if (response.isSuccessful) {
+                                Log.i("APP TO APP", response.body().toString())
+                                response.body()
+                                    ?.let {
+                                        callState.value = CallState.CALLING
+                                        calldest.value = target.name
+                                        sdkCall.initCall(it.tokenCall, it.server)
+                                        navController.navigate(Screen.Call.route)
+                                    }
+                            } else {
+                                Log.e("Call", "Call failed: ${response.code()}")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("Call", "Error: ${e.message}")
+                        }
+                    }
+                    loading = false
+                }
+
+            }, enabled = !loading) {
+                Icon(Icons.Default.Call, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Call User")
+            }
+        }
+    }
 }
 
 sealed class Screen(val route: String) {
@@ -176,86 +479,23 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun MainApp(sdkCall: CiCareCall) {
-    val navController = rememberNavController()
-    //val callPayload = remember { AppState.callPayload }
+fun HomeScreen(userId: Int, username: String, navController: NavHostController) {
 
-    val context = LocalContext.current
-    val sessionManager = remember { UserSessionManager(context) }
-    val savedUserId = sessionManager.getUserId()
-    val savedUserName = sessionManager.getUserName()
-    var userId by remember { mutableStateOf(savedUserId ?: 0) }
-    var username by remember { mutableStateOf(savedUserName ?: "") }
-    var password by remember { mutableStateOf("") }
-
-    val startDestination = if (savedUserId != null && savedUserId > 0) {
-        Screen.Home.route
-    } else {
-        Screen.Login.route
-    }
-
-    NavHost(navController, startDestination = startDestination) {
-        composable(Screen.Login.route) {
-            LoginScreen(
-                username = username,
-                password = password,
-                onUsernameChange = { username = it },
-                onPasswordChange = { password = it },
-                onLoginSuccess = { user ->
-                    userId = user.id
-                    val sessionManager = UserSessionManager(context)
-                    sessionManager.saveUserId(user.id, user.username)
-
-                    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-                        CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                val response = ApiClient.api.saveToken(TokenSaveRequest(user.id, token))
-                                if (response.isSuccessful) {
-                                    Log.d("FCM", "Token saved")
-                                } else {
-                                    Log.e("FCM", "Token failed: ${response.code()}")
-                                }
-                            } catch (e: Exception) {
-                                Log.e("FCM", "Error saving token: ${e.message}")
-                            }
-                        }
-                    }
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                    }
+    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val response = ApiClient.api.saveToken(TokenSaveRequest(userId, token))
+                if (response.isSuccessful) {
+                    Log.d("FCM", "Token saved")
+                } else {
+                    Log.e("FCM", "Token failed: ${response.code()}")
                 }
-            )
-        }
-
-        composable(Screen.Home.route) {
-            HomeScreen(username, navController)
-        }
-
-        composable(Screen.App2Phone.route) {
-            App2Phone(userId, username, sdkCall, navController)
-        }
-
-        composable(Screen.App2App.route) {
-            App2App(userId, username, sdkCall, navController)
-        }
-        composable(Screen.Call.route) {
-            CallScreen(username, sdkCall, navController)
-        }
-
-        /*composable(Screen.Call.route) {
-            callPayload?.let { payload ->
-                CallScreen(
-                    callerName = payload.callerName,
-                    onAccept = { /* logic */ },
-                    onReject = { /* logic */ }
-                )
+            } catch (e: Exception) {
+                Log.e("FCM", "Error saving token: ${e.message}")
             }
-        }*/
+        }
     }
-}
 
-@Composable
-fun HomeScreen(username: String, navController: NavHostController) {
     Column(
         modifier = Modifier.fillMaxSize().padding(50.dp),
         verticalArrangement = Arrangement.Center,
@@ -286,83 +526,6 @@ fun HomeScreen(username: String, navController: NavHostController) {
                     navController.navigate(Screen.App2Phone.route)
                 }
             )
-        }
-    }
-}
-
-@Composable
-fun App2App(userId: Int, currentUsername: String, sdkCall: CiCareCall, navController: NavHostController) {
-    var destination by remember { mutableStateOf<UserOnline?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    var onlineUsers by remember { mutableStateOf<List<UserOnline>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        try {
-            val response = ApiClient.api.getUserOnline(userId = userId)
-            if (response.isSuccessful) {
-                onlineUsers = response.body() ?: emptyList()
-                Log.i("ONLINE_USERS","")
-                response.body()?.get(0)?.name?.let { Log.i("ONLINE_USERS", it) }
-            } else {
-                Log.e("API", "Failed: ${response.code()}")
-            }
-        } catch (e: Exception) {
-            Log.e("API", "Exception: ${e.message}")
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("App to App", style = MaterialTheme.typography.headlineSmall)
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        if (onlineUsers.isNotEmpty()) {
-            OnlineUserDropdown(
-                users = onlineUsers,
-                selectedUser = destination,
-                onUserSelected = { destination = it }
-            )
-        } else {
-            Text("No users are online yet", style = MaterialTheme.typography.bodyLarge)
-        }
-
-        Button(onClick = {
-            coroutineScope.launch {
-                loading = true
-                if (destination === null) {
-                    Toast.makeText(context, "Pilih user tujuan terlebih dahulu", Toast.LENGTH_SHORT).show()
-                }
-                destination?.let { target ->
-                    try {
-                        val response = ApiClient.api.requestCall(CallRequest(userId, true, ""+target))
-                        if (response.isSuccessful) {
-                            response.body()
-                                ?.let {
-                                    sdkCall.initCall(it.tokenCall, it.server)
-                                    navController.navigate(Screen.Call.route)
-                                }
-                        } else {
-                            Log.e("Call", "Call failed: ${response.code()}")
-                        }
-                    } catch (e: Exception) {
-                        Log.e("Call", "Error: ${e.message}")
-                    }
-                }
-                loading = false
-            }
-
-        }, enabled = !loading) {
-            Icon(Icons.Default.Call, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Call User")
         }
     }
 }
@@ -558,104 +721,6 @@ fun LoginScreen(
 }
 
 @Composable
-fun CallScreen(
-    callerName: String,
-    sdkCall: CiCareCall?,
-    navController: NavHostController
-) {
-    val coroutineScope = rememberCoroutineScope()
-    var timer by remember { mutableStateOf("00:00") }
-    val volumeLevel = remember { mutableStateOf(0.1f) } // dari 0.0 (diam) ke 1.0 (keras)
-
-    LaunchedEffect(Unit) {
-        val startTime = System.currentTimeMillis()
-        while (true) {
-            val elapsed = System.currentTimeMillis() - startTime
-            val seconds = (elapsed / 1000).toInt()
-            val minutes = seconds / 60
-            val remainingSeconds = seconds % 60
-            timer = String.format("%02d:%02d", minutes, remainingSeconds)
-            delay(1000)
-        }
-    }
-
-    // Animasi dari volume
-    val animatedScale by animateFloatAsState(
-        targetValue = 1f + (volumeLevel.value * 1.5f),
-        animationSpec = tween(200),
-        label = "volumeScale"
-    )
-
-    val animatedAlpha by animateFloatAsState(
-        targetValue = 0.3f + (volumeLevel.value * 0.5f),
-        animationSpec = tween(200),
-        label = "volumeAlpha"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.DarkGray)
-            .padding(bottom = 50.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(100.dp))
-        Column(
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = "$callerName",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Text(
-                text = "Connected",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = timer,
-                style = MaterialTheme.typography.bodyLarge
-            )
-        }
-
-        Spacer(modifier = Modifier.height(150.dp))
-
-        CallPulseAnimation(
-            scaleC = animatedScale,
-            alphaC = animatedAlpha
-        )
-
-        Spacer(modifier = Modifier.height(250.dp))
-
-        Column(
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp)
-        ) {
-            Button(
-                onClick = {
-                    coroutineScope.launch { // ✅ Panggil suspend function di sini
-                        try {
-                            sdkCall?.hangupCall()
-                            navController.popBackStack()
-                        } catch (e: Exception) {
-                            // tangani error kalau perlu
-                        }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Call, contentDescription = "Accept", tint = Color.White)
-                Spacer(Modifier.width(8.dp))
-                Text("Hangup", color = Color.White)
-            }
-        }
-    }
-}
-
-@Composable
 fun CallPulseAnimation(
     icon: ImageVector = Icons.Default.Call,
     iconColor: Color = Color.White,
@@ -738,7 +803,12 @@ data class LoginResponse(val message: String, val user: User?)
 
 data class CallRequest(val user_id: Int, val is_online: Boolean, val destination: String)
 
-data class CallResponse(val tokenCall: String, val tokenAnswer: String?, val server: String)
+data class CallResponse(
+    @SerializedName("tokenCall")
+    val tokenCall: String,
+    @SerializedName("tokenAnswer")
+    val tokenAnswer: String?,
+    val server: String)
 
 data class SuccessResponse(val message: String)
 

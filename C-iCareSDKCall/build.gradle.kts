@@ -58,7 +58,7 @@ afterEvaluate {
 
                 groupId = "cc.c-icare.gitlab.annas"
                 artifactId = "c-icare-sdk-call"
-                version = project.version.toString()
+                version = "1.2.0-alpha"
             }
         }
     }
