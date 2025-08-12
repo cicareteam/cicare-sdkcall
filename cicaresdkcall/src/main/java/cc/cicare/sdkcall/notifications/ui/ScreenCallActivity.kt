@@ -178,6 +178,13 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
             //Log.i("CALLSCREEN", callStatusRaw)
             callService?.setCallEventListener(eventListener)
             callService?.setTickerListener(tickerListener)
+            callService?.let {
+                when(intent?.action) {
+                    CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch {
+                        it.answerCall(intent)
+                    }
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -190,6 +197,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             incomingService = (binder as IncomingCallService.LocalBinder).getService()
             inbound = true
+            incomingService?.setCallListener(eventListener)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -200,6 +208,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
 
     override fun onStart() {
         super.onStart()
+        Log.i("FCM", "on start screen")
         Intent(this, CiCareCallService::class.java).also {
             bindService(it, callServiceConnection, Context.BIND_AUTO_CREATE)
         }
@@ -266,11 +275,6 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         requestAudioFocus()
 
         when(intent?.action) {
-            CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch {
-                val _intent = Intent(context, CiCareCallService::class.java).apply {
-                    action = CiCareCallService.ACTION.ACCEPT
-                }
-            }
             CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
                 val _intent = Intent(context, CiCareCallService::class.java).apply {
                     action = CiCareCallService.ACTION.INCOMING
@@ -394,7 +398,6 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
 
     private fun reject() {
         incomingService?.reject()
-        finish()
     }
 
     private fun hangup() {
@@ -463,7 +466,7 @@ fun CallScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
-                    Text(text = callerName, style = MaterialTheme.typography.bodyLarge)
+                    Text(text = callTimer as String, style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(55.dp))
                     CallAvatar(avatarUrl)
                     Spacer(modifier = Modifier.height(15.dp))
@@ -471,7 +474,7 @@ fun CallScreen(
                     Text(text = callerName, style = MaterialTheme.typography.headlineSmall)
 
                     Text(
-                        text = callTimer as String,
+                        text = "", // ->status network
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }

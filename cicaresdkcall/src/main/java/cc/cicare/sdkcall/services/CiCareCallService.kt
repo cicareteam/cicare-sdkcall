@@ -191,11 +191,27 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
     }
 
     fun reject() {
-        socketManager.send("REJECT", JSONObject().apply {})
+        /*socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
         if (::eventListener.isInitialized)
             eventListener.onCallStateChanged(CallState.ENDED)
+        onCallStateChanged(CallState.ENDED)
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelf()*/
+        val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+
+        if (isForeground) {
+            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                action = "HANGUP"
+            })
+        } else {
+            socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
+            if (::eventListener.isInitialized)
+                eventListener.onCallStateChanged(CallState.ENDED)
+            onCallStateChanged(CallState.ENDED)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     fun hangup() {

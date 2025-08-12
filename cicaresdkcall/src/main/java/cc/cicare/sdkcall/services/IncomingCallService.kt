@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.event.CallState
+import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.services.CiCareCallService.ACTION
@@ -33,6 +34,8 @@ class IncomingCallService : Service() {
         "speaker" to "Speaker",
     )
     private var isFromPhone = false
+
+    private var callListener: CallStateListener? = null
 
     private val binder = LocalBinder()
 
@@ -65,7 +68,9 @@ class IncomingCallService : Service() {
         return START_STICKY
     }
 
-
+    fun setCallListener(listener: CallStateListener) {
+        this.callListener = listener
+    }
     private fun onIncomingCall(intent: Intent) {
         Log.i("FCM", "INCOMING 1");
         val callerName = intent.getStringExtra("caller_name") ?: "unknown"
@@ -89,7 +94,7 @@ class IncomingCallService : Service() {
         startForeground(101, notification.build())
 
         initReceive(server, token, isFromPhone)
-
+        Log.i("FCM", "INCOMING 2")
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
             startActivity(Intent(this, ScreenCallActivity::class.java).apply {
@@ -101,14 +106,11 @@ class IncomingCallService : Service() {
     }
 
     fun reject() {
-        socketManager.send("REJECT", JSONObject().apply {})
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
-            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-                action = "REJECT"
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
+            this.callListener?.onCallStateChanged(CallState.ENDED)
         }
+        socketManager.send("HANGUP_REQUEST", JSONObject().apply {})
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
