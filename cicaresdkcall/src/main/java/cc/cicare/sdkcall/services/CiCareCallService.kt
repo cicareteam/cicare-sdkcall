@@ -176,7 +176,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             ACTION.ONGOING -> onOngoingCall(intent)
             ACTION.ACCEPT -> answerCall(intent)
             ACTION.OUTGOING -> serviceScope.launch { onOutgoingCall(intent) }
-            ACTION.REJECT -> reject()
+            // ACTION.REJECT -> reject()
             ACTION.HANGUP -> hangup()
             "SCREEN" -> onScreen(intent)
         }
