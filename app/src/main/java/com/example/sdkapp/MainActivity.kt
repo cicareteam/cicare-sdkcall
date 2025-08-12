@@ -19,14 +19,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import cc.cicare.sdkcall.CiCareSdkCall
 import com.example.sdkapp.ui.theme.MyApplicationTheme
+import dagger.hilt.android.AndroidEntryPoint
+import jakarta.inject.Inject
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            CiCareSdkCall.initActivity(this, this).checkAndRequestPermissions()
+            CiCareSdkCall.init(this).checkAndRequestPermissions(this)
         }
         val context = this
         enableEdgeToEdge()
@@ -68,6 +71,9 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         },
+                        onStartInbound = {
+
+                        }
 //                        onStartInbound = {
 //                            CiCareSdkCall.init(this).showIncoming(
 //                                "1",
@@ -94,7 +100,7 @@ class MainActivity : ComponentActivity() {
 fun TestServiceButtons(
     modifier: Modifier = Modifier,
     onStartOutbound: () -> Unit,
-    //onStartInbound: () -> Unit
+    onStartInbound: () -> Unit
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -103,9 +109,9 @@ fun TestServiceButtons(
         Button(onClick = onStartOutbound, modifier = Modifier.fillMaxWidth()) {
             Text("Start Outbound Call Service")
         }
-//
-//        Button(onClick = onStartInbound, modifier = Modifier.fillMaxWidth()) {
-//            Text("Start Inbound Call Service")
-//        }
+
+        Button(onClick = onStartInbound, modifier = Modifier.fillMaxWidth()) {
+            Text("Start Inbound Call Service")
+        }
     }
 }

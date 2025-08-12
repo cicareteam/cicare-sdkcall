@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     id("kotlin-kapt")
-    id("com.google.dagger.hilt.android") version "2.57" apply false
+    id("dagger.hilt.android.plugin")
     alias(libs.plugins.kotlin.compose)
     `maven-publish`
 }
@@ -65,6 +65,9 @@ dependencies {
     implementation("io.socket:socket.io-client:2.0.0") {
         exclude("org.json", "json")
     }
+
+    implementation("com.google.dagger:hilt-android:2.57")
+    kapt("com.google.dagger:hilt-compiler:2.57")
     implementation(libs.stream.webrtc.android)
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
@@ -72,6 +75,13 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    androidTestImplementation("com.google.dagger:hilt-android-testing:2.57")
+    kaptAndroidTest("com.google.dagger:hilt-compiler:2.57")
+
+    // For local unit tests
+    testImplementation("com.google.dagger:hilt-android-testing:2.57")
+    kaptTest("com.google.dagger:hilt-compiler:2.57")
 }
 
 afterEvaluate {

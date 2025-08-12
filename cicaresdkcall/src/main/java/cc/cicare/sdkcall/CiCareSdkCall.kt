@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import androidx.core.app.ActivityCompat
@@ -84,7 +85,7 @@ class CiCareSdkCall private constructor(private val context: Context) {
             putExtra("meta_data", meta)
             putExtra("token", tokenCall)
             putExtra("server", server)
-            putExtra("is_from_phone", isFromPhone)
+            putExtra("from_phone", isFromPhone)
         }
         context.startForegroundService(intent)
     }

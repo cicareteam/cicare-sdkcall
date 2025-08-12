@@ -39,6 +39,7 @@ class SocketManager {
      * @param token Authentication token passed as query parameter.
      */
     fun connect(wssUrl: String, token: String) {
+        //Log.i("FCM", "Connecting to $wssUrl")
         val opts = IO.Options().apply {
             query = "token=$token"
             reconnection = true
@@ -50,8 +51,18 @@ class SocketManager {
         socket?.connect()
 
         // Event when the callee accepts the call
+        socket?.on("INIT_OK") { _ ->
+            callStateListener?.onCallStateChanged(CallState.CALLING)
+        }
+
+        // Event when the callee accepts the call
+        socket?.on("ANSWER_OK") { _ ->
+            callStateListener?.onCallStateChanged(CallState.ANSWERING)
+        }
+
+        // Event when the callee accepts the call
         socket?.on("ACCEPTED") { _ ->
-            callStateListener?.onCallStateChanged(CallState.CONNECTED)
+            callStateListener?.onCallStateChanged(CallState.CONNECTING)
         }
 
         // Event when the callee accepts the call

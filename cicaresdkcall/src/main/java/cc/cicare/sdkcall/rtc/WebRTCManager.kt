@@ -83,7 +83,6 @@ class WebRTCManager(
         audioTrack = peerConnectionFactory.createAudioTrack("101", audioSource)
         audioTrack.setEnabled(true)
         peerConnection?.addTrack(audioTrack)
-
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -256,7 +255,8 @@ class WebRTCManager(
     }
 
     fun setMicEnabled(enabled: Boolean) {
-        audioTrack.setEnabled(enabled)
+        Log.i("MUTE", enabled.toString())
+        audioTrack.setEnabled(!enabled)
     }
 
     fun close() {

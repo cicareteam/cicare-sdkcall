@@ -5,4 +5,11 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.google.gms.google.services) apply false
+
+}
+buildscript {
+    dependencies {
+        // plugin lainnya...
+        classpath("com.google.dagger:hilt-android-gradle-plugin:2.57")
+    }
 }

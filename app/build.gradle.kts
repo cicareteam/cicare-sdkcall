@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.gms.google.services)
+    id("kotlin-kapt")
+    id("dagger.hilt.android.plugin")
 }
 
 android {
@@ -58,13 +60,22 @@ dependencies {
     implementation(libs.converter.gson)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    kapt(libs.hilt.android.compiler)
+    implementation(libs.hilt.android)
     implementation("com.google.firebase:firebase-messaging:24.1.2")
-    implementation("com.github.cicareteam:cicare-sdk-call:v1.2.0-alpha.1")
-    //implementation(project(":cicaresdkcall"))
+    //implementation("com.github.cicareteam:cicare-sdk-call:v1.2.0-alpha.1")
+    implementation(project(":cicaresdkcall"))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    androidTestImplementation("com.google.dagger:hilt-android-testing:2.57")
+    kaptAndroidTest("com.google.dagger:hilt-compiler:2.57")
+
+    // For local unit tests
+    testImplementation("com.google.dagger:hilt-android-testing:2.57")
+    kaptTest("com.google.dagger:hilt-compiler:2.57")
 }

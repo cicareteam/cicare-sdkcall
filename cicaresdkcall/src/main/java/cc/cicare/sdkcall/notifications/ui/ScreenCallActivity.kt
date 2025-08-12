@@ -637,6 +637,8 @@ fun RoundIconButton(
 ) {
     val actualBackground = if (enabled) backgroundColor else backgroundColor.copy(alpha = 0.4f)
     val actualTint = if (enabled) iconTint else iconTint.copy(alpha = 0.6f)
+    val textColor = Color(0XFF7F7F7F)
+    val actualText = if (enabled) textColor else textColor.copy(alpha = 0.6f)
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -657,7 +659,7 @@ fun RoundIconButton(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
-                color = actualTint
+                color = actualText
             )
         }
     }
@@ -683,9 +685,9 @@ fun DefaultPreview() {
     CallScreen(
         "Driver Andhi",
         "",
-        "connect",
+        "connected",
         "",
-        false,
+        true,
         false,
         metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
         onMuteClick = {},

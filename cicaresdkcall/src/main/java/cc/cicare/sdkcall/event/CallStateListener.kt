@@ -18,9 +18,9 @@ enum class CallState {
     CALLING,
 
     /**
-     * Incoming call
+     * Answering call
      */
-    INCOMING,
+    ANSWERING,
 
     /**
      * Call is incoming and ringing on the callee side.

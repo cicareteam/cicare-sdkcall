@@ -58,7 +58,6 @@ class IncomingCallService : Service() {
             val extra = intent?.getSerializableExtra("meta_data") as? HashMap<String, String>
             if (extra != null) HashMap(metaData + extra) else metaData
         }
-        Log.i("FCM", intent?.action.toString())
         when (intent?.action) {
             ACTION.INCOMING -> onIncomingCall(intent)
             ACTION.REJECT -> reject()
@@ -68,13 +67,14 @@ class IncomingCallService : Service() {
 
 
     private fun onIncomingCall(intent: Intent) {
+        Log.i("FCM", "INCOMING 1");
         val callerName = intent.getStringExtra("caller_name") ?: "unknown"
         val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
         val token = intent.getStringExtra("token") ?: return
         val server = intent.getStringExtra("server") ?: return
         isFromPhone = intent.getBooleanExtra("from_phone", false)
         CallNotificationManager.provideNotificationmanagerCompat(
-            this, "CALL_INCOMING_CHANNEL_ID", NotificationManager.IMPORTANCE_MAX)
+            this, "CALL_INCOMING_CHANNEL_ID", NotificationManager.IMPORTANCE_HIGH)
         val notification = CallNotificationManager.incomingCallNotificationBuilder(
             this,
             intent,
@@ -86,10 +86,10 @@ class IncomingCallService : Service() {
 //            webRTCManager.init()
 //            webRTCManager.initMic()
 //        }
+        startForeground(101, notification.build())
 
         initReceive(server, token, isFromPhone)
 
-        startForeground(101, notification.build())
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
             startActivity(Intent(this, ScreenCallActivity::class.java).apply {

@@ -19,14 +19,14 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import javax.inject.Singleton
+import jakarta.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
 object CallNotificationManager {
 
-    @Singleton
     @Provides
+    @Singleton
     fun provideNotificationmanagerCompat(
         @ApplicationContext context: Context,
         channelId: String,
@@ -42,8 +42,8 @@ object CallNotificationManager {
         return notificationManager
     }
 
-    @Singleton
     @Provides
+    @Singleton
     fun incomingCallNotificationBuilder(
         @ApplicationContext context: Context,
         intent: Intent,
@@ -66,7 +66,7 @@ object CallNotificationManager {
             .setSmallIcon(CiCareCallService.INCOMING_CALL_ICON)
             .setSound(CiCareCallService.ringtoneUrl, AudioManager.STREAM_RING)
             .addPerson(callerProfile)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
             .setAutoCancel(false)
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(
@@ -77,8 +77,8 @@ object CallNotificationManager {
             ))
     }
 
-    @Singleton
     @Provides
+    @Singleton
     fun outgoingCallNotificationBuilder(
         @ApplicationContext context: Context,
         intent: Intent,
@@ -107,9 +107,8 @@ object CallNotificationManager {
                 serviceCallIntent(context, intent, 1, CiCareCallService.ACTION.HANGUP)
             ))
     }
-
-    @Singleton
     @Provides
+    @Singleton
     fun ongoingCallNotificationBuilder(
         @ApplicationContext context: Context,
         intent: Intent,
@@ -139,8 +138,8 @@ object CallNotificationManager {
             ))
     }
 
-    @Singleton
     @Provides
+    @Singleton
     fun missedCallNotificationBuilder(
         @ApplicationContext context: Context,
         intent: Intent,

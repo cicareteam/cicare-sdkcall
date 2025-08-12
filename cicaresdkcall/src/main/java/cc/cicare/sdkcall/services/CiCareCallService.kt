@@ -62,6 +62,8 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
 
     private var timerJob: Job? = null
 
+    private var intent: Intent? = null
+
     var callState = MutableStateFlow<String>("initializing")
 
     private var metaData: Map<String, String> = hashMapOf(
@@ -110,8 +112,6 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
     override fun onCreate() {
         requestAudioFocus()
         webRTCManager = WebRTCManager(this, this)
-        webRTCManager.init()
-        webRTCManager.initMic()
         socketManager = SocketManager()
         socketManager.setCallStateListener(this)
         socketManager.setWebrtc(webRTCManager)
@@ -172,7 +172,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
                 Log.i("FCM", "Service incoming")
             }
             ACTION.ONGOING -> onOngoingCall(intent)
-            ACTION.ACCEPT -> serviceScope.launch { answerCall(intent) }
+            ACTION.ACCEPT -> answerCall(intent)
             ACTION.OUTGOING -> serviceScope.launch { onOutgoingCall(intent) }
             ACTION.REJECT -> reject()
             ACTION.HANGUP -> hangup()
@@ -205,7 +205,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
     }
 
     fun setMute(isMuted: Boolean) {
-        webRTCManager.setMicEnabled(!isMuted)
+        webRTCManager.setMicEnabled(isMuted)
     }
 
     fun setSpeaker(isSpeakerOn: Boolean) {
@@ -226,7 +226,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         })
     }
 
-    suspend fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
+    fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (fromScreen != true && !isForeground) {
             startActivity(Intent(this, ScreenCallActivity::class.java).apply {
@@ -238,24 +238,28 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         val server = intent.getStringExtra("server") ?: ""
         val token = intent.getStringExtra("token") ?: ""
         socketManager.connect(server, token)
+        socketManager.send("ANSWER_CALL", JSONObject())
+    }
+
+    suspend fun ackAnswer() {
         val sdp: SessionDescription?
-        if (this.isFromPhone)
+        var event = "SDP_OFFER"
+        if (this.isFromPhone) {
             sdp = webRTCManager.createAnswer()
-        else {
+            event = "SDP_ANSWER"
+        } else {
+            webRTCManager.init()
             webRTCManager.initMic()
             sdp = webRTCManager.createOffer()
         }
-        onCallStateChanged(CallState.CONNECTED)
-        onOngoingCall(intent)
-        socketManager.send("ANSWER_CALL", JSONObject().apply {
-            put("is_caller", false)
+        socketManager.send(event, JSONObject().apply {
             put("sdp", JSONObject().apply {
                 put("type", sdp.type.toString())
                 put("sdp", sdp.description)
             })
         })
-        Log.i("FCM", "ANSWER SIGNAL SENT")
     }
+
 
     @SuppressLint("MissingPermission")
     private suspend fun onOutgoingCall(intent: Intent) {
@@ -345,6 +349,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         )
         eventListener.onCallStateChanged(CallState.CONNECTED)
         startForeground(101, notification.build())
+        startCallTimer()
     }
 
     fun setCallEventListener(eventListener: CallStateListener) {
@@ -416,16 +421,20 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             eventListener.onCallStateChanged(callState)
 
         this@CiCareCallService.callState.value = callState.toString().lowercase()
-        if (callState == CallState.CALLING || callState == CallState.RINGING) {
-            outgoingCallStateUpdate(this@CiCareCallService.callState.value)
-        }
-        if (callState == CallState.CONNECTED) {
-            startCallTimer()
-        }
-        if (callState == CallState.ENDED) {
-            stopTimer()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+        when(callState) {
+            CallState.CALLING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.INITIALIZING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.ANSWERING -> serviceScope.launch { ackAnswer() }
+            CallState.RINGING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.CONNECTED -> {
+                intent?.let { onOngoingCall(it) }
+            }
+            CallState.ENDED -> {
+                stopTimer()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
