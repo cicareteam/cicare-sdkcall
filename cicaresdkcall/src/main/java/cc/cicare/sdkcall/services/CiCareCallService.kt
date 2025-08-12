@@ -237,6 +237,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
                 putExtras(intent)
             })
         }
+        this.intent = Intent(intent)
         val server = intent.getStringExtra("server") ?: ""
         val token = intent.getStringExtra("token") ?: ""
         socketManager.connect(server, token)
