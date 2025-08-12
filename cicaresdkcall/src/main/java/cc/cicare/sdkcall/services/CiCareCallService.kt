@@ -166,6 +166,8 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             if (extra != null) HashMap(metaData + extra) else metaData
         }
 
+        intent?.let { this.intent = it }
+
         when(intent?.action) {
             ACTION.INCOMING -> {
                 callState.value = "incoming"
