@@ -166,7 +166,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             if (extra != null) HashMap(metaData + extra) else metaData
         }
 
-        intent?.let { this.intent = it }
+        intent?.let { this.intent = Intent(it) }
 
         when(intent?.action) {
             ACTION.INCOMING -> {
@@ -337,8 +337,11 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
 
     private fun onOngoingCall(intent: Intent) {
         val callType = intent.getStringExtra("call_type") ?: "outgoing"
+        Log.i("FCM",callType)
         val callerName =
             if (callType == "incoming") intent.getStringExtra("caller_name") else intent.getStringExtra("callee_name")
+        Log.i("FCM",intent.getStringExtra("caller_name")?:"")
+        Log.i("FCM",intent.getStringExtra("callee_name")?:"")
         val callerAvatar =
             if (callType == "incoming") intent.getStringExtra("caller_avatar") else intent.getStringExtra("callee_avatar")
         CallNotificationManager.provideNotificationmanagerCompat(this, "CALL_ONGOING_CHANNEL_ID", NotificationManager.IMPORTANCE_LOW)
