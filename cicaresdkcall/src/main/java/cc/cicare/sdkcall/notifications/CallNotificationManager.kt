@@ -155,7 +155,7 @@ object CallNotificationManager {
 
         return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(CiCareCallService.MISSED_CALL_ICON)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .addPerson(callerProfile)
     }
 

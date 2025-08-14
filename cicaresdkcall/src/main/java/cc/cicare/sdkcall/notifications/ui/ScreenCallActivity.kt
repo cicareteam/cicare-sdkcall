@@ -232,9 +232,9 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-//        when(intent?.action) {
-//            CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
-//        }
+        when(intent?.action) {
+            CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
+        }
 
 
         lifecycleScope.launchWhenStarted {
@@ -286,6 +286,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
                     it.callState.value = "incoming"
                 }
             }
+            CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
             CiCareCallService.ACTION.REJECT -> hangup()
         }
 
@@ -310,7 +311,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
                 if (callType == "incoming") callerName else calleeName,
                 callTimer = if
                         (callStatusRaw == "connected") formatElapsedTime(timeTicker)
-                        else metaData[callStatusRaw] ?: callStatusRaw,
+                        else metaData["call_$callStatusRaw"] ?: callStatusRaw,
                 callStatusRaw = callStatusRaw,
                 if (callType == "incoming") callerAvatar else calleeAvatar,
                 isMicMuted,
@@ -392,7 +393,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
     }
 
     private suspend fun answer() {
-
+        Log.i("FCM", "ASNWERING")
         callService?.answerCall(intent, true)
     }
 

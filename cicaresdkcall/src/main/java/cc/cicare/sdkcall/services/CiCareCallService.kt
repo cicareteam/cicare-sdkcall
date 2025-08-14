@@ -245,6 +245,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
     }
 
     fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
+        Log.i("FCM", "Answer")
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (fromScreen != true && !isForeground) {
             startActivity(Intent(this, ScreenCallActivity::class.java).apply {
@@ -258,6 +259,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         val token = intent.getStringExtra("token") ?: ""
         socketManager.connect(server, token)
         socketManager.send("ANSWER_CALL", JSONObject())
+        Log.i("FCM", "Answer")
     }
 
     suspend fun ackAnswer() {
@@ -296,7 +298,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             this,
             intent,
             "CALL_OUTGOING_CHANNEL_ID",
-            metaData[callState.value] ?: callState.value,
+            metaData["call_${callState.value}"] ?: callState.value,
             calleeName,
             calleeAvatar
         )
