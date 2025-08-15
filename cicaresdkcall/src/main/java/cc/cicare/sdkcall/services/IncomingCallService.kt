@@ -67,7 +67,6 @@ class IncomingCallService : Service() {
         when (intent?.action) {
             ACTION.INCOMING -> {
                 if (hasActiveCall) {
-                    // Sedang ada panggilan, langsung missed call
                     showMissedCallNotification(intent)
                     socketManager.send("BUSY", JSONObject().apply {
                         put("caller_id", intent.getStringExtra("caller_id"))
@@ -97,12 +96,13 @@ class IncomingCallService : Service() {
         )
         val notification = CallNotificationManager.missedCallNotificationBuilder(
             this,
-            Intent(), // intent kosong karena tidak perlu action
+            Intent(),
             "CALL_MISSED_CHANNEL_ID",
             callerName,
             callerAvatar,
             description
         )
+
         notificationManager.notify(101, notification.build())
 
         socketManager.send("BUSY", JSONObject().apply {
