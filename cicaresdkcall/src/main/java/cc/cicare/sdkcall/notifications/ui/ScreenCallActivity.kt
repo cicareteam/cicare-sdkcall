@@ -108,6 +108,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         "call_ringing" to "Ringing...",
         "call_refused" to "Decline",
         "call_end" to "End Call",
+        "call_incoming" to "Incoming",
         "call_temporarily_unavailable" to "Currently unreachable",
         "call_lost_connection" to "Connection lost",
         "call_weak_signal" to "Weak Signal",

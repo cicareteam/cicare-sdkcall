@@ -40,7 +40,15 @@ enum class CallState {
     /**
      * Call has ended either by remote, local, or due to disconnection.
      */
-    ENDED
+    ENDED,
+    /**
+     * Call has busy either by remote, local, or due to disconnection.
+     */
+    BUSY,
+    /**
+     * Call has refused either by remote, local, or due to disconnection.
+     */
+    REFUSED
 }
 
 /**

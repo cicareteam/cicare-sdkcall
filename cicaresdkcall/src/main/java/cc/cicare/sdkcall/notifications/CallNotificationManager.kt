@@ -145,7 +145,8 @@ object CallNotificationManager {
         intent: Intent,
         channelId: String,
         calleeName: String,
-        calleeAvatar: String
+        calleeAvatar: String,
+        description: String
     ): NotificationCompat.Builder {
         val callerProfile = Person.Builder()
             .setUri(calleeAvatar)
@@ -157,6 +158,9 @@ object CallNotificationManager {
             .setSmallIcon(CiCareCallService.MISSED_CALL_ICON)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .addPerson(callerProfile)
+            .setContentTitle(calleeName)
+            .setContentText(description)
+            .setAutoCancel(true)
     }
 
     private fun serviceCallIntent(

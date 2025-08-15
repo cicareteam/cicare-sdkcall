@@ -34,6 +34,8 @@ class IncomingCallService : Service() {
         "speaker" to "Speaker",
     )
     private var isFromPhone = false
+    private var hasActiveCall = false
+
 
     private var callListener: CallStateListener? = null
 
@@ -54,6 +56,7 @@ class IncomingCallService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i("FCM", "$hasActiveCall")
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java) as? HashMap<String, String>
             if (extra != null) HashMap(metaData + extra) else metaData
@@ -62,17 +65,56 @@ class IncomingCallService : Service() {
             if (extra != null) HashMap(metaData + extra) else metaData
         }
         when (intent?.action) {
-            ACTION.INCOMING -> onIncomingCall(intent)
+            ACTION.INCOMING -> {
+                if (hasActiveCall) {
+                    // Sedang ada panggilan, langsung missed call
+                    showMissedCallNotification(intent)
+                    socketManager.send("BUSY", JSONObject().apply {
+                        put("caller_id", intent.getStringExtra("caller_id"))
+                    })
+                } else {
+                    onIncomingCall(intent)
+                }
+            }
             ACTION.REJECT -> reject()
         }
         return START_STICKY
     }
 
+
     fun setCallListener(listener: CallStateListener) {
         this.callListener = listener
     }
+
+    private fun showMissedCallNotification(intent: Intent) {
+
+        val callerName = intent.getStringExtra("caller_name") ?: "unknown"
+        val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
+        val description = "Missed call from $callerName"
+
+        val notificationManager = CallNotificationManager.provideNotificationmanagerCompat(
+            this, "CALL_MISSED_CHANNEL_ID", NotificationManager.IMPORTANCE_LOW
+        )
+        val notification = CallNotificationManager.missedCallNotificationBuilder(
+            this,
+            Intent(), // intent kosong karena tidak perlu action
+            "CALL_MISSED_CHANNEL_ID",
+            callerName,
+            callerAvatar,
+            description
+        )
+        notificationManager.notify(101, notification.build())
+
+        socketManager.send("BUSY", JSONObject().apply {
+            put("caller_name", callerName)
+            put("description", description)
+        })
+    }
+
     private fun onIncomingCall(intent: Intent) {
-        Log.i("FCM", "INCOMING 1");
+        hasActiveCall = true;
+
+        Log.i("FCM", "INCOMING 1 $hasActiveCall");
         val callerName = intent.getStringExtra("caller_name") ?: "unknown"
         val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
         val token = intent.getStringExtra("token") ?: return
@@ -92,7 +134,6 @@ class IncomingCallService : Service() {
 //            webRTCManager.initMic()
 //        }
         startForeground(101, notification.build())
-
         initReceive(server, token, isFromPhone)
         Log.i("FCM", "INCOMING 2")
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)

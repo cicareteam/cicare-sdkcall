@@ -19,7 +19,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         Log.i("FCM", token)
         CoroutineScope(Dispatchers.IO).launch {
-            val response = ApiClient.api.saveToken(TokenSaveRequest(2, token))
+            val response = ApiClient.api.saveToken(TokenSaveRequest(1, token))
             if (response.isSuccessful) {
                 Log.d("FCM", "Token saved")
             } else {

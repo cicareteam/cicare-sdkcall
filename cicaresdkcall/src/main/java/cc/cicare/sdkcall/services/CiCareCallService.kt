@@ -58,6 +58,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
     private var outgoingIntent: Intent? = null
 
     private var isFromPhone = false
+    private var hasActiveCall = false
     private val serviceScope = CoroutineScope(Dispatchers.IO)
 
     private var timerJob: Job? = null
@@ -95,6 +96,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         const val ONGOING = "ONGOING"
         const val OUTGOING = "OUTGOING"
         const val MISSED_CALL = "MISSED_CALL"
+        const val BUSY = "BUSY"
     }
 
     companion object {
@@ -170,9 +172,18 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
 
         when(intent?.action) {
             ACTION.INCOMING -> {
-                callState.value = "incoming"
-                Log.i("FCM", "Service incoming")
+                metaData["call_${callState.value}"] ?: callState.value
+
+                Log.i("PRII", callState.value)
             }
+//                if (callState.value == "CONNECTED") {
+//                    // Sudah ada panggilan, langsung missed
+//                    Log.i("FCM", "ongoing call from: ${intent.getStringExtra("callee_name")}")
+//
+//                    showMissedCallNotification(
+//                        callerName = intent.getStringExtra("caller_name") ?: "Unknown",
+//                        callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
+
             ACTION.ONGOING -> onOngoingCall(intent)
             ACTION.ACCEPT -> answerCall(intent)
             ACTION.OUTGOING -> serviceScope.launch { onOutgoingCall(intent) }
@@ -182,6 +193,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         }
         return START_STICKY
     }
+
 
     private fun onScreen(intent: Intent) {
         startActivity(Intent(this, ScreenCallActivity::class.java).apply {
@@ -205,7 +217,7 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
                 action = "HANGUP"
             })
         } else {
-            socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
+            socketManager.send("HANGUP", JSONObject().apply {})
             if (::eventListener.isInitialized)
                 eventListener.onCallStateChanged(CallState.ENDED)
             onCallStateChanged(CallState.ENDED)
@@ -445,12 +457,21 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             eventListener.onCallStateChanged(callState)
 
         this@CiCareCallService.callState.value = callState.toString().lowercase()
+
+        hasActiveCall = when(callState) {
+            CallState.CALLING, CallState.RINGING, CallState.ANSWERING,
+            CallState.CONNECTING, CallState.CONNECTED -> true
+            else -> false
+        }
+
         when(callState) {
             CallState.CALLING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.INITIALIZING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.ANSWERING -> serviceScope.launch { ackAnswer() }
             CallState.RINGING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.BUSY -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.REFUSED -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.CONNECTED -> {
                 intent?.let { onOngoingCall(it) }
             }
