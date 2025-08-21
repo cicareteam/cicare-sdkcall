@@ -3,6 +3,7 @@ package com.example.sdkapp
 import android.util.Log
 import android.widget.Toast
 import cc.cicare.sdkcall.CiCareSdkCall
+import cc.cicare.sdkcall.services.CiCareCallService
 //import cc.cicare.sdkcall.event.MessageActionListener
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -19,7 +20,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         Log.i("FCM", token)
         CoroutineScope(Dispatchers.IO).launch {
-            val response = ApiClient.api.saveToken(TokenSaveRequest(1, token))
+            val response = ApiClient.api.saveToken(TokenSaveRequest(4, token))
             if (response.isSuccessful) {
                 Log.d("FCM", "Token saved")
             } else {
@@ -58,6 +59,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
 
         Log.i("FCM", "notifikasi masuk $data")
+
         CiCareSdkCall.init(this).showIncoming(
             callerId = callerId,
             callerName = callerName,

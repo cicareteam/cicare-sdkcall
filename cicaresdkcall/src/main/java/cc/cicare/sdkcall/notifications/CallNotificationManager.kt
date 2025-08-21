@@ -1,13 +1,14 @@
 package cc.cicare.sdkcall.notifications
 
 import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -25,20 +26,45 @@ import jakarta.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object CallNotificationManager {
 
+    var ringtoneUrl: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
     @Provides
     @Singleton
-    fun provideNotificationmanagerCompat(
+    fun provideNotificationManagerCompat(
         @ApplicationContext context: Context,
         channelId: String,
         important: Int
     ): NotificationManagerCompat {
         val notificationManager = NotificationManagerCompat.from(context)
-        val channel = NotificationChannel(
-            channelId,
-            "CALL_CHANNEL_NAME",
-            important
-        )
-        notificationManager.createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "CALL_CHANNEL_NAME",
+                important
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+        return notificationManager
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationManagerIncoming(
+        @ApplicationContext context: Context,
+        channelId: String,
+        important: Int
+    ): NotificationManagerCompat {
+        val notificationManager = NotificationManagerCompat.from(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "CALL_CHANNEL_NAME",
+                important
+            )
+            channel.setSound(ringtoneUrl, AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            notificationManager.createNotificationChannel(channel)
+        }
         return notificationManager
     }
 
@@ -64,7 +90,7 @@ object CallNotificationManager {
         return NotificationCompat.Builder(context, channelId)
             .setFullScreenIntent(screenCallIntent(context, intent, "INCOMING"), true)
             .setSmallIcon(CiCareCallService.INCOMING_CALL_ICON)
-            .setSound(CiCareCallService.ringtoneUrl, AudioManager.STREAM_RING)
+            .setSound(ringtoneUrl, AudioManager.STREAM_RING)
             .addPerson(callerProfile)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
@@ -104,7 +130,7 @@ object CallNotificationManager {
             .setAutoCancel(false)
             .setStyle(NotificationCompat.CallStyle.forOngoingCall(
                 callerProfile,
-                serviceCallIntent(context, intent, 1, CiCareCallService.ACTION.HANGUP)
+                serviceHangupCallIntent(context, intent)
             ))
     }
     @Provides
@@ -134,7 +160,7 @@ object CallNotificationManager {
             .setAutoCancel(false)
             .setStyle(NotificationCompat.CallStyle.forOngoingCall(
                 callerProfile,
-                serviceCallIntent(context, intent, 1, CiCareCallService.ACTION.HANGUP)
+                serviceHangupCallIntent(context, intent)
             ))
     }
 
@@ -142,7 +168,6 @@ object CallNotificationManager {
     @Singleton
     fun missedCallNotificationBuilder(
         @ApplicationContext context: Context,
-        intent: Intent,
         channelId: String,
         calleeName: String,
         calleeAvatar: String,
@@ -163,19 +188,17 @@ object CallNotificationManager {
             .setAutoCancel(true)
     }
 
-    private fun serviceCallIntent(
+    private fun serviceHangupCallIntent(
         @ApplicationContext context: Context,
         intent: Intent,
-        code: Int,
-        callAction: String
     ): PendingIntent {
         val hangupIntent = Intent(context, CiCareCallService::class.java).apply {
-            action = callAction
+            action = CiCareCallService.ACTION.HANGUP
             putExtras(intent)
         }
 
         return PendingIntent.getService(
-            context, code, hangupIntent,
+            context, 1, hangupIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
             )
     }

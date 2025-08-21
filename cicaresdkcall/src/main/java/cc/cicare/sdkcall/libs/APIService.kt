@@ -27,7 +27,7 @@ data class CallResponse(
 )
 
 interface ApiService {
-    @POST("call/sdk-outgoing")
+    @POST("api/sdk-call/one2one")
     suspend fun requestCall(@Body request: CallRequest): Response<CallResponse>
 }
 

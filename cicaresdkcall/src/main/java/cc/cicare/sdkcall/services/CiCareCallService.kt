@@ -2,15 +2,15 @@ package cc.cicare.sdkcall.services
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.RingtoneManager
-import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -20,13 +20,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
+import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.libs.ApiClient
 import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.rtc.WebRTCEventCallback
 import cc.cicare.sdkcall.rtc.WebRTCManager
-import cc.cicare.sdkcall.signaling.SignalingHelper
 import cc.cicare.sdkcall.signaling.SocketManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,18 +41,22 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
-import kotlin.math.sign
 
 interface TimeTickerListener {
     fun onTimeTicketUpdate(seconds: Long)
 }
 
-class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
+@Suppress("DEPRECATION")
+class CiCareCallService:
+    Service(),
+    CallStateListener,
+    WebRTCEventCallback {
 
     private lateinit var webRTCManager: WebRTCManager
     private lateinit var socketManager: SocketManager
     private lateinit var eventListener: CallStateListener
     private lateinit var tickerListener: TimeTickerListener
+    private var connectionListener: ConnectionStateListener? = null
 
 
     private var outgoingIntent: Intent? = null
@@ -65,20 +69,25 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
 
     private var intent: Intent? = null
 
-    var callState = MutableStateFlow<String>("initializing")
+    var callState = MutableStateFlow("initializing")
 
     private var metaData: Map<String, String> = hashMapOf(
-        "initializing" to "Initializing...",
-        "calling" to "Calling...",
-        "incoming" to "Incoming Call",
-        "ringing" to "Ringing",
-        "connected" to "Connected",
-        "ended" to "Ended",
-        "answer" to "Answer",
-        "decline" to "Decline",
-        "mute" to "Mute",
-        "unmute" to "Unmute",
-        "speaker" to "Speaker",
+        "call_busy" to "The customer is busy and cannot be reached",
+        "call_calling" to "Calling...",
+        "call_connecting" to "Connecting...",
+        "call_ringing" to "Ringing...",
+        "call_refused" to "Decline",
+        "call_end" to "End Call",
+        "call_incoming" to "Incoming",
+        "call_temporarily_unavailable" to "Currently unreachable",
+        "call_lost_connection" to "Connection lost",
+        "call_weak_signal" to "Weak Signal",
+        "call_name_title" to "Xanh SM Customer",
+        "call_btn_message" to "Send Message",
+        "call_btn_mute" to "Mute",
+        "call_btn_speaker" to "Speaker",
+        "call_failed_api" to "Call failed due to system error",
+        "call_failed_no_connection" to "No internet connection",
     )
 
 
@@ -95,17 +104,17 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         const val INCOMING = "INCOMING"
         const val ONGOING = "ONGOING"
         const val OUTGOING = "OUTGOING"
-        const val MISSED_CALL = "MISSED_CALL"
-        const val BUSY = "BUSY"
+//        const val MISSED_CALL = "MISSED_CALL"
+//        const val BUSY = "BUSY"
     }
 
     companion object {
         //val CALL_CHANNEL_ID = "call_channel_id"
-        val INCOMING_CALL_ICON = android.R.drawable.sym_call_incoming
-        val ONGOING_CALL_ICON = android.R.drawable.sym_action_call
-        val MISSED_CALL_ICON = android.R.drawable.sym_call_missed
-        var OUTGOING_CALL_ICON = android.R.drawable.sym_call_outgoing
-        var ringtoneUrl: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) }
+        const val INCOMING_CALL_ICON = android.R.drawable.sym_call_incoming
+        const val ONGOING_CALL_ICON = android.R.drawable.sym_action_call
+        const val MISSED_CALL_ICON = android.R.drawable.sym_call_missed
+        const val OUTGOING_CALL_ICON = android.R.drawable.sym_call_outgoing
+    }
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
@@ -121,23 +130,29 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
 
     private fun requestAudioFocus() {
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-        /*val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setOnAudioFocusChangeListener { /* optional */ }
-            .build()*/
-        //audioManager.requestAudioFocus(focusRequest)
-        Log.i("FCM", "Audio focus")
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
 
-        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(audioAttributes)
-            .setAcceptsDelayedFocusGain(false)
-            .setOnAudioFocusChangeListener { /* handle focus change */ }
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
 
-        audioManager.requestAudioFocus(focusRequest)
+            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(audioAttributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener { /* handle focus change */ }
+                .build()
+
+            audioManager.requestAudioFocus(focusRequest)
+        } else {
+            audioManager.requestAudioFocus(
+                { focusChange ->
+
+                },
+                AudioManager.STREAM_VOICE_CALL,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            )
+        }
     }
 
     fun startCallTimer() {
@@ -159,13 +174,20 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
     fun getCallStateFlow(): StateFlow<String> = callState
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java) as? HashMap<String, String>
-            if (extra != null) HashMap(metaData + extra) else metaData
+            val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)?.mapNotNull {
+                val key = it.key as? String
+                val value = it.value as? String
+                if (key != null && value != null) key to value else null
+            }?.toMap() ?: emptyMap()
+            HashMap(metaData + extra)
         } else {
-            val extra = intent?.getSerializableExtra("meta_data") as? HashMap<String, String>
-            if (extra != null) HashMap(metaData + extra) else metaData
+            val extra = (intent?.getSerializableExtra("meta_data") as? HashMap<*, *>)?.mapNotNull {
+                val key = it.key as? String
+                val value = it.value as? String
+                if (key != null && value != null) key to value else null
+            }?.toMap() ?: emptyMap()
+            HashMap(metaData + extra)
         }
 
         intent?.let { this.intent = Intent(it) }
@@ -202,35 +224,46 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         })
     }
 
-    fun reject() {
-        /*socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
-        if (::eventListener.isInitialized)
-            eventListener.onCallStateChanged(CallState.ENDED)
-        onCallStateChanged(CallState.ENDED)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()*/
-        val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-
-        if (isForeground) {
-            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                action = "HANGUP"
-            })
-        } else {
-            socketManager.send("HANGUP", JSONObject().apply {})
-            if (::eventListener.isInitialized)
-                eventListener.onCallStateChanged(CallState.ENDED)
-            onCallStateChanged(CallState.ENDED)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        }
-    }
+//    fun reject() {
+//        val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+//
+//        if (isForeground) {
+//            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
+//                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+//                action = "HANGUP"
+//            })
+//        } else {
+//            socketManager.send("HANGUP", JSONObject().apply {})
+//            if (::eventListener.isInitialized)
+//                eventListener.onCallStateChanged(CallState.ENDED)
+//            onCallStateChanged(CallState.ENDED)
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+//                stopForeground(STOP_FOREGROUND_REMOVE)
+//            } else {
+//                stopForeground(true)
+//            }
+//            stopSelf()
+//        }
+//    }
 
     fun hangup() {
         socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
         if (::eventListener.isInitialized)
             eventListener.onCallStateChanged(CallState.ENDED)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            stopForeground(true)
+        }
+        stopSelf()
+    }
+
+    fun forceStop() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            stopForeground(true)
+        }
         stopSelf()
     }
 
@@ -305,7 +338,11 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
         val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
         val checksum = intent.getStringExtra("checksum") ?: ""
-        CallNotificationManager.provideNotificationmanagerCompat(this, "CALL_OUTGOING_CHANNEL_ID", NotificationManager.IMPORTANCE_LOW)
+        CallNotificationManager.provideNotificationManagerCompat(this,
+            "CALL_OUTGOING_CHANNEL_ID",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                NotificationManager.IMPORTANCE_LOW
+            } else Notification.PRIORITY_LOW)
         val notification = CallNotificationManager.outgoingCallNotificationBuilder(
             this,
             intent,
@@ -320,16 +357,20 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtras(intent)
         })
+        if (!checkInternetConnection()) {
+            connectionListener?.onNetworkError(state = metaData["call_failed_no_connection"]
+                ?: "No internet connection", systemError = false )
+        }
         try {
             val response = ApiClient.api.requestCall(
                 CallRequest(
-                    callerId,
-                    callerName,
-                    callerAvatar,
-                    calleeId,
-                    calleeName,
-                    calleeAvatar,
-                    checksum
+                    callerId=callerId,
+                    callerName=callerName,
+                    callerAvatar=callerAvatar,
+                    calleeId=calleeId,
+                    calleeName=calleeName,
+                    calleeAvatar=calleeAvatar,
+                    checkSum=checksum,
                 )
             )
             if (response.isSuccessful) {
@@ -341,16 +382,27 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
                 }
             }
         } catch (e: Exception) {
-            eventListener.onCallStateChanged(CallState.ENDED)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            throw Exception(e)
+            //eventListener.onCallStateChanged(CallState.ENDED)
+
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+//                stopForeground(STOP_FOREGROUND_REMOVE)
+//            else
+//                stopForeground(true)
+//            stopSelf()
+//            throw Exception(e)
+            connectionListener?.onNetworkError(state = metaData["call_failed_api"]
+                ?: "Call failed due to system error", systemError = true)
+            Log.e("SDK CALL", e.message.toString())
         }
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun outgoingCallStateUpdate(callState: String) {
-        val notificationManager = CallNotificationManager.provideNotificationmanagerCompat(this, "CALL_OUTGOING_CHANNEL_ID", NotificationManager.IMPORTANCE_LOW)
+        val notificationManager = CallNotificationManager.provideNotificationManagerCompat(this,
+            "CALL_OUTGOING_CHANNEL_ID",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                NotificationManager.IMPORTANCE_LOW
+            } else Notification.PRIORITY_LOW)
         this.callState.value = callState
         val calleeName = outgoingIntent?.getStringExtra("callee_name") ?: "unknown"
         val calleeAvatar = outgoingIntent?.getStringExtra("callee_avatar") ?: ""
@@ -365,6 +417,13 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
 
         notificationManager.notify(101, notification.build())
     }
+    @RequiresPermission(Manifest.permission.ACCESS_NETWORK_STATE)
+    private fun checkInternetConnection(): Boolean {
+        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
 
     private fun onOngoingCall(intent: Intent) {
         val callType = intent.getStringExtra("call_type") ?: "outgoing"
@@ -375,7 +434,11 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         Log.i("FCM",intent.getStringExtra("callee_name")?:"")
         val callerAvatar =
             if (callType == "incoming") intent.getStringExtra("caller_avatar") else intent.getStringExtra("callee_avatar")
-        CallNotificationManager.provideNotificationmanagerCompat(this, "CALL_ONGOING_CHANNEL_ID", NotificationManager.IMPORTANCE_LOW)
+        CallNotificationManager.provideNotificationManagerCompat(this,
+            "CALL_ONGOING_CHANNEL_ID",
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                NotificationManager.IMPORTANCE_LOW
+            } else Notification.PRIORITY_LOW)
         val notification = CallNotificationManager.ongoingCallNotificationBuilder(
             this,
             intent,
@@ -396,8 +459,15 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
         this.tickerListener = eventListener
     }
 
+    fun setConnectionStateListener(connectionListener: ConnectionStateListener) {
+        this.connectionListener = connectionListener
+    }
+
     override fun onDestroy() {
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        else
+            stopForeground(true)
         //signaling.close()
         webRTCManager.close()
         socketManager.disconnect()
@@ -477,14 +547,33 @@ class CiCareCallService: Service(), CallStateListener, WebRTCEventCallback {
             }
             CallState.ENDED -> {
                 stopTimer()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                else
+                    stopForeground(true)
                 stopSelf()
             }
         }
     }
 
     override fun onIceConnectionStateChanged(state: PeerConnection.IceConnectionState) {
-        Log.i("ICE_STATE", state.toString())
+        when (state) {
+            PeerConnection.IceConnectionState.CONNECTED -> {
+                connectionListener?.onSignalStateChanged("connected")
+            }
+            PeerConnection.IceConnectionState.DISCONNECTED -> {
+                connectionListener?.onSignalStateChanged("weak_signal")
+            }
+            PeerConnection.IceConnectionState.FAILED -> {
+                connectionListener?.onSignalStateChanged("lost")
+            }
+            PeerConnection.IceConnectionState.CLOSED -> {
+                connectionListener?.onSignalStateChanged("")
+            }
+            else -> {
+                Log.d("WebRTC", "ICE State: $state")
+            }
+        }
     }
 
 

@@ -6,13 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.*
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.content.pm.PackageManager
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -21,7 +16,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,12 +32,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
@@ -54,6 +45,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,13 +55,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
+import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
+import cc.cicare.sdkcall.notifications.ui.icons.SpeakerBluetooth
 import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
@@ -78,7 +72,12 @@ import coil.compose.AsyncImage
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
 
-class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerListener {
+class ScreenCallActivity :
+    ComponentActivity(),
+    CallStateListener,
+    TimeTickerListener,
+    ConnectionStateListener
+{
 
     private var callService: CiCareCallService? = null
 
@@ -87,15 +86,17 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
     private var inbound: Boolean = false
     private var eventListener: CallStateListener = this
     private var tickerListener: TimeTickerListener = this
+    private var connectionLister: ConnectionStateListener = this
     //private var callDurationJob: Job? = null
     //private var callSeconds = 0
 
-    private var timeTicker by mutableStateOf(0L)
+    private var timeTicker by mutableLongStateOf(0L)
     private val viewModel by viewModels<CallViewModel>()
 
     //private var callStatusRaw by mutableStateOf("initializing")
     private var isMicMuted by mutableStateOf(false)
     private var isSpeakerOn by mutableStateOf(false)
+    private var isOnBluetooth by mutableStateOf(false)
 
     private val listener: MessageActionListener?
         get() = MessageListenerHolder.listener
@@ -166,23 +167,36 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         "call_suggestion_desc_try_again" to "Try calling again in a moment",
     )
 
+    private var connectionState by mutableStateOf("")
+    private var networkErrorText by mutableStateOf("")
+    private var showErrorDialog by mutableStateOf(false)
+    private var isSystemError by mutableStateOf(false)
+
     private val callServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             callService = (binder as CiCareCallService.LocalBinder).getService()
             bound = true
             // Observe StateFlow
-            lifecycleScope.launchWhenStarted {
-                callService?.getCallStateFlow()?.collect {
-                    viewModel.updateState(it)
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    callService?.getCallStateFlow()?.collect {
+                        viewModel.updateState(it)
+                    }
                 }
             }
             //Log.i("CALLSCREEN", callStatusRaw)
             callService?.setCallEventListener(eventListener)
             callService?.setTickerListener(tickerListener)
+            callService?.setConnectionStateListener(connectionLister)
             callService?.let {
                 when(intent?.action) {
                     CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch {
                         it.answerCall(intent)
+                    }
+                    CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
+                        callService?.let { it ->
+                            it.callState.value = "incoming"
+                        }
                     }
                 }
             }
@@ -211,10 +225,10 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         super.onStart()
         Log.i("FCM", "on start screen")
         Intent(this, CiCareCallService::class.java).also {
-            bindService(it, callServiceConnection, Context.BIND_AUTO_CREATE)
+            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
         }
         Intent(this, IncomingCallService::class.java).also {
-            bindService(it, incomingServiceConnection, Context.BIND_AUTO_CREATE)
+            bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
         }
     }
 
@@ -238,50 +252,52 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         }
 
 
-        lifecycleScope.launchWhenStarted {
-            callService?.getCallStateFlow()?.collect {
-                viewModel.updateState(it)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                callService?.getCallStateFlow()?.collect {
+                    viewModel.updateState(it)
+                }
             }
         }
         callService?.setCallEventListener(eventListener)
+        callService?.setConnectionStateListener(this)
         // handle update state or extras here
     }
 
-    private fun requestAudioFocus() {
-        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-        /*val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setOnAudioFocusChangeListener { /* optional */ }
-            .build()*/
-        //audioManager.requestAudioFocus(focusRequest)
-        Log.i("FCM", "Audio focus")
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+//    private fun requestAudioFocus() {
+//        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+//        /*val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+//            .setOnAudioFocusChangeListener { /* optional */ }
+//            .build()*/
+//        //audioManager.requestAudioFocus(focusRequest)
+//        Log.i("FCM", "Audio focus")
+//        val audioAttributes = AudioAttributes.Builder()
+//            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+//            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+//            .build()
+//
+//        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+//            .setAudioAttributes(audioAttributes)
+//            .setAcceptsDelayedFocusGain(false)
+//            .setOnAudioFocusChangeListener { /* handle focus change */ }
+//            .build()
+//
+//        audioManager.requestAudioFocus(focusRequest)
+//    }
 
-        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(audioAttributes)
-            .setAcceptsDelayedFocusGain(false)
-            .setOnAudioFocusChangeListener { /* handle focus change */ }
-            .build()
-
-        audioManager.requestAudioFocus(focusRequest)
-    }
-
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val context = this
-
-        requestAudioFocus()
+//        requestAudioFocus()
 
         when(intent?.action) {
             CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
-                val _intent = Intent(context, CiCareCallService::class.java).apply {
+                val intent = Intent(context, CiCareCallService::class.java).apply {
                     action = CiCareCallService.ACTION.INCOMING
                 }
-                startService(_intent)
-                Log.i("FCM", "Call Service found")
+                startService(intent)
                 callService?.let {
                     Log.i("FCM", "Call Service found")
                     it.callState.value = "incoming"
@@ -299,51 +315,74 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         val callType = intent.getStringExtra("call_type") ?: "outgoing"
 
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val extra = intent.getSerializableExtra("meta_data", HashMap::class.java) as? HashMap<String, String>
-            if (extra != null) HashMap(metaData + extra) else metaData
+            val extra = intent.getSerializableExtra("meta_data", HashMap::class.java)
+                ?.mapNotNull {
+                    val key = it.key as? String
+                    val value = it.value as? String
+                    if (key != null && value != null) key to value else null
+                }?.toMap() ?: emptyMap()
+            HashMap(metaData + extra)
         } else {
-            val extra = intent.getSerializableExtra("meta_data") as? HashMap<String, String>
-            if (extra != null) HashMap(metaData + extra) else metaData
+            val extra = (intent.getSerializableExtra("meta_data") as? HashMap<*, *>)?.mapNotNull {
+                val key = it.key as? String
+                val value = it.value as? String
+                if (key != null && value != null) key to value else null
+            }?.toMap() ?: emptyMap()
+            HashMap(metaData + extra)
         }
         enableEdgeToEdge()
         setContent {
             val callStatusRaw by viewModel.callStatusRaw.collectAsState()
-            CallScreen(
-                if (callType == "incoming") callerName else calleeName,
-                callTimer = if
-                        (callStatusRaw == "connected") formatElapsedTime(timeTicker)
-                        else metaData["call_$callStatusRaw"] ?: callStatusRaw,
-                callStatusRaw = callStatusRaw,
-                if (callType == "incoming") callerAvatar else calleeAvatar,
-                isMicMuted,
-                isSpeakerOn,
-                metaData = metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
-                onMuteClick = {
-                    isMicMuted = !isMicMuted
-                    callService?.setMute(isMicMuted)
-                },
-                onSpeakerClick = {
-                    isSpeakerOn = !isSpeakerOn
-                    callService?.setSpeaker(isSpeakerOn)
-                },
-                onMessageClick = {
-                    listener?.onShowMessagePage()
-                    hangup()
-                },
-                onAnswerCallClick = {
-                    lifecycleScope.launch {
-                        answer()
-                    }
-                },
-                onEndCallClick = {
-                    if (callStatusRaw !="connected") {
-                        incomingService?.reject()
-                    } else {
+            Box(modifier = Modifier.fillMaxSize()) {
+                CallScreen(
+                    callerName = if (callType == "incoming") callerName else calleeName,
+                    callTimer = if
+                                        (callStatusRaw == "connected") formatElapsedTime(timeTicker)
+                    else metaData["call_$callStatusRaw"] ?: callStatusRaw,
+                    callStatusRaw = callStatusRaw,
+                    signalState = connectionState,
+                    avatarUrl = if (callType == "incoming") callerAvatar else calleeAvatar,
+                    isMicMuted,
+                    isSpeakerOn,
+                    isOnBluetooth,
+                    metaData = metaData.mapKeys { it.key.toString() }
+                        .mapValues { it.value.toString() },
+                    onMuteClick = {
+                        isMicMuted = !isMicMuted
+                        callService?.setMute(isMicMuted)
+                    },
+                    onSpeakerClick = {
+                        isSpeakerOn = !isSpeakerOn
+                        callService?.setSpeaker(isSpeakerOn)
+                    },
+                    onMessageClick = {
+                        listener?.onShowMessagePage()
                         hangup()
-                    }
-                    finish()
-                },
-            )
+                    },
+                    onAnswerCallClick = {
+                        answer()
+                    },
+                    onEndCallClick = {
+                        if (callStatusRaw != "connected") {
+                            incomingService?.reject()
+                        } else {
+                            hangup()
+                        }
+                        finish()
+                    },
+                )
+                ErrorAlertDialog(
+                    showDialog = showErrorDialog,
+                    onDismiss = {
+                        showErrorDialog = false
+                        callService?.forceStop()
+                        incomingService?.forceStop()
+                        finish()
+                    },
+                    withIcon = isSystemError,
+                    message = networkErrorText
+                )
+            }
         }
     }
 
@@ -364,7 +403,7 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
     }
 
     override fun onCallStateChanged(callState: CallState) {
-        Log.i("HELLO", "RUN TIMER")
+        //Log.i("HELLO", "RUN TIMER")
         //callStatusRaw = callState.toString().lowercase()
         /*when (callState) {
             CallState.RINGING -> callStatus = "ringing"
@@ -376,30 +415,27 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
             else -> callStatus = callStatusRaw
         }*/
 
-        /*if (callState == CallState.CONNECTED) {
-            Log.i("SCREEN", "RUN TIMER")
-            // Start timer
-            callSeconds = 0
-            callDurationJob?.cancel()
-            callDurationJob = CoroutineScope(Dispatchers.Main).launch {
-                while (isActive) {
-                    delay(1000)
-                    callSeconds++
-                    callTimer = formatTime(callSeconds)
-                }
-            }
-        } else*/ if (callState == CallState.ENDED) {
+        // if (callState == CallState.CONNECTED) {
+        // Log.i("SCREEN", "RUN TIMER")
+        // // Start timer
+        // callSeconds = 0
+        // callDurationJob?.cancel()
+        // callDurationJob = CoroutineScope(Dispatchers.Main).launch {
+        // while (isActive) {
+        // delay(1000)
+        // callSeconds++
+        // callTimer = formatTime(callSeconds)
+        // }
+        // }
+        // } else
+        if (callState == CallState.ENDED) {
             finish()
         }
     }
 
-    private suspend fun answer() {
+    private fun answer() {
         Log.i("FCM", "ASNWERING")
         callService?.answerCall(intent, true)
-    }
-
-    private fun reject() {
-        incomingService?.reject()
     }
 
     private fun hangup() {
@@ -414,6 +450,16 @@ class ScreenCallActivity : ComponentActivity(), CallStateListener, TimeTickerLis
         return String.format("%02d:%02d", minutes, secs)
     }
 
+    override fun onSignalStateChanged(state: String) {
+        connectionState = if (state == "connected") "" else state
+    }
+
+    override fun onNetworkError(state: String, systemError: Boolean) {
+        showErrorDialog = true
+        isSystemError = systemError
+        networkErrorText = state
+    }
+
 //    private fun _e(key: String, hashMap: Map<*, *>): Any {
 //        return hashMap[key] ?: key
 //    }
@@ -425,9 +471,11 @@ fun CallScreen(
     callerName: String,
     callTimer: Any,
     callStatusRaw: String,
+    signalState: String,
     avatarUrl: String,
     isMicMuted: Boolean,
     isSpeakerOn: Boolean,
+    isOnBluetooth: Boolean,
     metaData: Map<String, String>,
     onMuteClick: () -> Unit,
     onSpeakerClick: () -> Unit,
@@ -456,7 +504,7 @@ fun CallScreen(
                     style = MaterialTheme.typography.headlineSmall
                 )
 
-                Spacer(modifier = Modifier.height(80.dp))
+                Spacer(modifier = Modifier.height(60.dp))
             }
 
             // Avatar
@@ -471,13 +519,14 @@ fun CallScreen(
                     Text(text = callTimer as String, style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(55.dp))
                     CallAvatar(avatarUrl)
+                    Spacer(modifier = Modifier.height(35.dp))
+
+                    Text(text = metaData["call_name_title"] ?: callerName, style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(15.dp))
-
-                    Text(text = callerName, style = MaterialTheme.typography.headlineSmall)
-
                     Text(
-                        text = "", // ->status network
-                        style = MaterialTheme.typography.bodyMedium
+                        text = metaData[signalState] ?: signalState, // ->status network
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Red
                     )
                 }
             }
@@ -490,7 +539,10 @@ fun CallScreen(
                     .padding(bottom = 15.dp)
             ) {
                 RoundIconButton(
-                    icon = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Outlined.VolumeUp,
+                    icon = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else {
+                        if (isOnBluetooth) SpeakerBluetooth
+                        else Icons.AutoMirrored.Outlined.VolumeUp
+                    },
                     label = metaData["call_btn_speaker"] ?: "Speaker",
                     onClick = onSpeakerClick,
                     backgroundColor = if (isSpeakerOn) Color(0xFF00BABD) else Color(0xFFE9F8F9),
@@ -674,7 +726,7 @@ fun RoundIconButton(
 @Composable
 @Preview
 fun DefaultPreview() {
-    var metaData: HashMap<*, *> = hashMapOf(
+    val metaData: HashMap<*, *> = hashMapOf(
         "initializing" to "Initializing",
         "call_title" to "Telpone gratis",
         "ringing" to "Ringing",
@@ -687,18 +739,29 @@ fun DefaultPreview() {
         "speaker" to "Speaker",
         "phone_speaker" to "Phone Speaker",
     )
+    Box(modifier = Modifier.fillMaxSize()) {
     CallScreen(
         "Driver Andhi",
         "",
         "connected",
+        signalState = "call_lost_connection",
         "",
-        true,
-        false,
-        metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
+        isMicMuted = true,
+        isSpeakerOn = false,
+        isOnBluetooth = true,
+        metaData = metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
         onMuteClick = {},
         onEndCallClick = {},
         onAnswerCallClick = {},
         onSpeakerClick = {},
-        onMessageClick= {}
+        onMessageClick = {}
     )
+        ErrorAlertDialog(
+            showDialog = true,
+            onDismiss = {
+            },
+            withIcon = true,
+            message = "networkErrorText"
+        )
+    }
 }

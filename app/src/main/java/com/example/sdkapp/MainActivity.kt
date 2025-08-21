@@ -28,6 +28,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        CiCareSdkCall.setRingTone()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             CiCareSdkCall.init(this).checkAndRequestPermissions(this)
         }
@@ -60,12 +62,12 @@ class MainActivity : ComponentActivity() {
                         onStartOutbound = {
                             lifecycleScope.launch {
                                 CiCareSdkCall.init(context).makeCall(
+                                    "3",
+                                    "Anis",
+                                    "https://avatar.iran.liara.run/public/",
                                     "1",
                                     "Annas",
-                                    "",
-                                    "2",
-                                    "Halis",
-                                    "",
+                                    "https://avatar.iran.liara.run/public/",
                                     "",
                                     metaData
                                 )

@@ -72,3 +72,8 @@ interface CallStateListener {
      */
     fun onCallStateChanged(callState: CallState)
 }
+
+interface ConnectionStateListener {
+    fun onSignalStateChanged(state: String)
+    fun onNetworkError(state: String, systemError: Boolean)
+}
