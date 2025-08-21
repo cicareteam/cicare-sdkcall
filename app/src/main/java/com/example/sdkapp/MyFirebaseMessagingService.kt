@@ -3,15 +3,11 @@ package com.example.sdkapp
 import android.util.Log
 import android.widget.Toast
 import cc.cicare.sdkcall.CiCareSdkCall
-import cc.cicare.sdkcall.services.CiCareCallService
-//import cc.cicare.sdkcall.event.MessageActionListener
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
