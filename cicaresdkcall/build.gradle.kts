@@ -66,8 +66,8 @@ dependencies {
         exclude("org.json", "json")
     }
 
-    implementation("com.google.dagger:hilt-android:2.57")
-    kapt("com.google.dagger:hilt-compiler:2.57")
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
     implementation(libs.stream.webrtc.android)
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
@@ -76,8 +76,8 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
-    androidTestImplementation("com.google.dagger:hilt-android-testing:2.57")
-    kaptAndroidTest("com.google.dagger:hilt-compiler:2.57")
+    androidTestImplementation(libs.hilt.android.testing)
+    kaptAndroidTest(libs.hilt.compiler)
 
     // For local unit tests
     testImplementation("com.google.dagger:hilt-android-testing:2.57")

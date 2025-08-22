@@ -19,8 +19,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import cc.cicare.sdkcall.CiCareSdkCall
 import com.example.sdkapp.ui.theme.MyApplicationTheme
-import dagger.hilt.android.AndroidEntryPoint
-import jakarta.inject.Inject
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -28,14 +26,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        CiCareSdkCall.setRingTone()
+        //CiCareSdkCall.setRingTone()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             CiCareSdkCall.init(this).checkAndRequestPermissions(this)
         }
         val context = this
         enableEdgeToEdge()
-        var metaData: Map<String, String> = hashMapOf(
+        val metaData: Map<String, String> = hashMapOf(
             "initializing" to "Mulai...",
             "calling" to "Memanggil...",
             "incoming" to "Panggilan Masuk",
