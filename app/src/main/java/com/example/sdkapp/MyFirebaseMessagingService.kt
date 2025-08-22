@@ -14,13 +14,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     //@Inject lateinit var callServiceRepository: CallServiceRepository
 
     override fun onNewToken(token: String) {
-        Log.i("FCM", token)
+        Log.i("SDK Call", token)
         CoroutineScope(Dispatchers.IO).launch {
             val response = ApiClient.api.saveToken(TokenSaveRequest(4, token))
             if (response.isSuccessful) {
-                Log.d("FCM", "Token saved")
+                Log.d("SDK Call", "Token saved")
             } else {
-                Log.e("FCM", "Token failed: ${response.code()}")
+                Log.e("SDK Call", "Token failed: ${response.code()}")
             }
         }
 //
@@ -29,16 +29,16 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 //                try {
 //                    val response = ApiClient.api.saveToken(TokenSaveRequest(userId, token))
 //                    if (response.isSuccessful) {
-//                        Log.d("FCM", "Token saved")
+//                        Log.d("SDK Call", "Token saved")
 //                    } else {
-//                        Log.e("FCM", "Token failed: ${response.code()}")
+//                        Log.e("SDK Call", "Token failed: ${response.code()}")
 //                    }
 //                } catch (e: Exception) {
-//                    Log.e("FCM", "Error saving token: ${e.message}")
+//                    Log.e("SDK Call", "Error saving token: ${e.message}")
 //                }
 //            }
 //        } else {
-//            Log.w("FCM", "User ID not found, cannot save token.")
+//            Log.w("SDK Call", "User ID not found, cannot save token.")
 //        }
     }
 
@@ -54,7 +54,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         //callServiceRepository.startService(callerId, callerName, callerAvatar)
 
 
-        Log.i("FCM", "notifikasi masuk $data")
+        Log.i("SDK Call", "notifikasi masuk $data")
 
         CiCareSdkCall.init(this).showIncoming(
             callerId = callerId,

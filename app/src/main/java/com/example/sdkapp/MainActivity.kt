@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
         )
 //        FirebaseApp.initializeApp(this)
 //        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-//            Log.d("FCM", "Token: $token")
+//            Log.d("SDK Call", "Token: $token")
 //        }
         setContent {
             MyApplicationTheme {

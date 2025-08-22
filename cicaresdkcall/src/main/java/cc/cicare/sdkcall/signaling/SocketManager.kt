@@ -38,7 +38,7 @@ class SocketManager {
      * @param token Authentication token passed as query parameter.
      */
     fun connect(wssUrl: String, token: String) {
-        //Log.i("FCM", "Connecting to $wssUrl")
+        //Log.i("SDK Call", "Connecting to $wssUrl")
         val opts = IO.Options().apply {
             query = "token=$token"
             reconnection = true

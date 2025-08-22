@@ -69,7 +69,7 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i("FCM", "$hasActiveCall")
+        Log.i("SDK Call", "$hasActiveCall")
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)
                 ?.mapNotNull {
@@ -164,7 +164,7 @@ class IncomingCallService : Service(), CallStateListener {
 //        }
         startForeground(101, notification.build())
         initReceive(server, token, isFromPhone)
-        Log.i("FCM", "INCOMING 2")
+        Log.i("SDK Call", "INCOMING 2")
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
             startActivity(Intent(this, ScreenCallActivity::class.java).apply {
@@ -224,7 +224,7 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
-        TODO("Not yet implemented")
+        Log.i("SDK Call", "$state")
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)

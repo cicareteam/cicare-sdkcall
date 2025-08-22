@@ -223,7 +223,6 @@ class ScreenCallActivity :
 
     override fun onStart() {
         super.onStart()
-        Log.i("FCM", "on start screen")
         Intent(this, CiCareCallService::class.java).also {
             bindService(it, callServiceConnection, BIND_AUTO_CREATE)
         }
@@ -270,7 +269,7 @@ class ScreenCallActivity :
 //            .setOnAudioFocusChangeListener { /* optional */ }
 //            .build()*/
 //        //audioManager.requestAudioFocus(focusRequest)
-//        Log.i("FCM", "Audio focus")
+//        Log.i("SDK Call", "Audio focus")
 //        val audioAttributes = AudioAttributes.Builder()
 //            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
 //            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -299,7 +298,6 @@ class ScreenCallActivity :
                 }
                 startService(intent)
                 callService?.let {
-                    Log.i("FCM", "Call Service found")
                     it.callState.value = "incoming"
                 }
             }
@@ -434,7 +432,6 @@ class ScreenCallActivity :
     }
 
     private fun answer() {
-        Log.i("FCM", "ASNWERING")
         callService?.answerCall(intent, true)
     }
 

@@ -200,7 +200,7 @@ class CiCareCallService:
             }
 //                if (callState.value == "CONNECTED") {
 //                    // Sudah ada panggilan, langsung missed
-//                    Log.i("FCM", "ongoing call from: ${intent.getStringExtra("callee_name")}")
+//                    Log.i("SDK Call", "ongoing call from: ${intent.getStringExtra("callee_name")}")
 //
 //                    showMissedCallNotification(
 //                        callerName = intent.getStringExtra("caller_name") ?: "Unknown",
@@ -290,7 +290,6 @@ class CiCareCallService:
     }
 
     fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
-        Log.i("FCM", "Answer")
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (fromScreen != true && !isForeground) {
             startActivity(Intent(this, ScreenCallActivity::class.java).apply {
@@ -304,7 +303,6 @@ class CiCareCallService:
         val token = intent.getStringExtra("token") ?: ""
         socketManager.connect(server, token)
         socketManager.send("ANSWER_CALL", JSONObject())
-        Log.i("FCM", "Answer")
     }
 
     suspend fun ackAnswer() {
@@ -427,11 +425,8 @@ class CiCareCallService:
 
     private fun onOngoingCall(intent: Intent) {
         val callType = intent.getStringExtra("call_type") ?: "outgoing"
-        Log.i("FCM",callType)
         val callerName =
             if (callType == "incoming") intent.getStringExtra("caller_name") else intent.getStringExtra("callee_name")
-        Log.i("FCM",intent.getStringExtra("caller_name")?:"")
-        Log.i("FCM",intent.getStringExtra("callee_name")?:"")
         val callerAvatar =
             if (callType == "incoming") intent.getStringExtra("caller_avatar") else intent.getStringExtra("callee_avatar")
         CallNotificationManager.provideNotificationManagerCompat(this,
