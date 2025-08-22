@@ -80,8 +80,8 @@ dependencies {
     kaptAndroidTest(libs.hilt.compiler)
 
     // For local unit tests
-    testImplementation("com.google.dagger:hilt-android-testing:2.57")
-    kaptTest("com.google.dagger:hilt-compiler:2.57")
+    testImplementation(libs.hilt.android.testing)
+    kaptTest(libs.hilt.compiler)
 }
 
 afterEvaluate {
