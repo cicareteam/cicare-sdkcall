@@ -1,5 +1,6 @@
 package cc.cicare.sdkcall.notifications.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -8,6 +9,9 @@ import kotlinx.coroutines.*
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -55,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -63,6 +68,8 @@ import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
+import cc.cicare.sdkcall.libs.ApiClient
+import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.notifications.ui.icons.SpeakerBluetooth
 import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
@@ -70,8 +77,18 @@ import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import coil.compose.AsyncImage
 import org.webrtc.PeerConnection
+import java.net.InetAddress
 import kotlin.collections.HashMap
 
+data class CallInfo (
+    val callerId: String,
+    val callerName: String,
+    val callerAvatar: String,
+    val calleeId: String,
+    val calleeName: String,
+    val calleeAvatar: String,
+    val checksum: String,
+)
 class ScreenCallActivity :
     ComponentActivity(),
     CallStateListener,
@@ -184,19 +201,32 @@ class ScreenCallActivity :
                     }
                 }
             }
-            //Log.i("CALLSCREEN", callStatusRaw)
+            Log.i("SDK CALL", "Bounding service")
             callService?.setCallEventListener(eventListener)
             callService?.setTickerListener(tickerListener)
             callService?.setConnectionStateListener(connectionLister)
-            callService?.let {
+            callService?.let { service ->
                 when(intent?.action) {
                     CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch {
-                        it.answerCall(intent)
+                        service.answerCall(intent)
                     }
                     CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
                         callService?.let { it ->
                             it.callState.value = "incoming"
                         }
+                    }
+                    CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
+                        requestOutgoingCall(
+                            callInfo = CallInfo(
+                                callerId = intent.getStringExtra("caller_id") ?: "",
+                                callerName = intent.getStringExtra("caller_name") ?: "",
+                                callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
+                                calleeId = intent.getStringExtra("callee_id") ?: "",
+                                calleeName = intent.getStringExtra("callee_id") ?: "",
+                                calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
+                                checksum = intent.getStringExtra("checksum") ?: "",
+                            ),
+                            callService = service)
                     }
                 }
             }
@@ -205,6 +235,58 @@ class ScreenCallActivity :
         override fun onServiceDisconnected(name: ComponentName?) {
             bound = false
             callService = null
+        }
+    }
+
+    private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
+        if (!checkInternetConnection()) {
+            Log.i("SDK CALL", "NO INTERNET")
+            onNetworkError(
+                state = (metaData["call_failed_no_connection"]
+                    ?: "No internet connection") as String, systemError = false
+            )
+        } else {
+            try {
+                val response = ApiClient.api.requestCall(
+                    CallRequest(
+                        callerId = callInfo.callerId,
+                        callerName = callInfo.callerName,
+                        callerAvatar = callInfo.callerAvatar,
+                        calleeId = callInfo.calleeId,
+                        calleeName = callInfo.calleeName,
+                        calleeAvatar = callInfo.calleeAvatar,
+                        checkSum = callInfo.checksum,
+                    )
+                )
+                if (response.isSuccessful) {
+                    val apiResponse = response.body()
+                    apiResponse?.let {
+                        this.onCallStateChanged(CallState.CALLING)
+                        when {
+                            ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED -> {
+                                callService.outgoingCallStateUpdate("calling")
+                            }
+                        }
+                        callService.initCall(it.server, it.token)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e.cause == null) {
+                    this.onNetworkError(
+                        state = (metaData["call_failed_no_connection"]
+                            ?: "No internet connection") as String, systemError = false
+                    )
+                } else {
+                    this.onNetworkError(
+                        state = (metaData["call_failed_api"]
+                            ?: "Call failed due to system error") as String, systemError = true
+                    )
+                }
+                Log.e("SDK CALL D", e.cause.toString())
+            }
         }
     }
 
@@ -221,8 +303,40 @@ class ScreenCallActivity :
         }
     }
 
+    private suspend fun checkInternetConnection(): Boolean {
+        /*if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_NETWORK_STATE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)*/
+        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        Log.i("SDK CALL", "Cek Internet")
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return false
+        Log.i("SDK CALL", "Cek Internet 2")
+        // Cek koneksi internet real via ping
+        return withContext(Dispatchers.IO) {
+            try {
+                val ipAddr: InetAddress = InetAddress.getByName("8.8.8.8") // Google DNS
+                Log.i("SDK CALL", "Cek Internet $ipAddr")
+                !ipAddr.equals("")
+            } catch (e: Exception) {
+                Log.e("SDK CALL", e.message.toString())
+                false
+            }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
+
         Intent(this, CiCareCallService::class.java).also {
             bindService(it, callServiceConnection, BIND_AUTO_CREATE)
         }
@@ -258,8 +372,9 @@ class ScreenCallActivity :
                 }
             }
         }
+        Log.i("SDK Call", "New Intent")
         callService?.setCallEventListener(eventListener)
-        callService?.setConnectionStateListener(this)
+        callService?.setConnectionStateListener(connectionLister)
         // handle update state or extras here
     }
 
@@ -373,6 +488,7 @@ class ScreenCallActivity :
                     showDialog = showErrorDialog,
                     onDismiss = {
                         showErrorDialog = false
+                        callService?.hangup()
                         callService?.forceStop()
                         incomingService?.forceStop()
                         finish()
@@ -453,6 +569,7 @@ class ScreenCallActivity :
 
     override fun onNetworkError(state: String, systemError: Boolean) {
         showErrorDialog = true
+        Log.i("NETWORK_ERROR", state)
         isSystemError = systemError
         networkErrorText = state
     }

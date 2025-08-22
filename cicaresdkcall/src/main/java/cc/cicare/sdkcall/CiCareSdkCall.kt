@@ -11,6 +11,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
+import cc.cicare.sdkcall.libs.ApiClient
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
@@ -23,6 +24,11 @@ object CiCareSdkCall {
     fun init(context: Context): CiCareSdkCall {
         contextRef = WeakReference(context.applicationContext)
         return this
+    }
+
+    fun setAPI(baseUrl: String, token: String) {
+        ApiClient.BASE_URL = baseUrl
+        ApiClient.AUTH_TOKEN = token
     }
 
     fun setRingTone(ringTone: Uri) {
@@ -125,18 +131,18 @@ object CiCareSdkCall {
                  metaData: Map<String, String> = emptyMap()) {
         val ctx = contextRef?.get()
         if (ctx == null) return
-                    val intent = Intent(ctx, CiCareCallService::class.java).apply {
-                        action = CiCareCallService.ACTION.OUTGOING
-                        putExtra("call_type", "outgoing")
-                        putExtra("callee_id", calleeId)
-                        putExtra("callee_name", calleeName)
-                        putExtra("callee_avatar", calleeAvatar)
-                        putExtra("caller_id", callerId)
-                        putExtra("caller_name", callerName)
-                        putExtra("caller_avatar", callerAvatar)
-                        putExtra("checksum", checkSum)
-                        putExtra("meta_data", HashMap(metaData))
-                    }
+        val intent = Intent(ctx, CiCareCallService::class.java).apply {
+            action = CiCareCallService.ACTION.OUTGOING
+            putExtra("call_type", "outgoing")
+            putExtra("callee_id", calleeId)
+            putExtra("callee_name", calleeName)
+            putExtra("callee_avatar", calleeAvatar)
+            putExtra("caller_id", callerId)
+            putExtra("caller_name", callerName)
+            putExtra("caller_avatar", callerAvatar)
+            putExtra("checksum", checkSum)
+            putExtra("meta_data", HashMap(metaData))
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             ctx.startForegroundService(intent)
         else

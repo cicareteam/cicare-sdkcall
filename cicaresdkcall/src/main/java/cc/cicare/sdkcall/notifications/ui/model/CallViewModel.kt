@@ -8,7 +8,7 @@ class CallViewModel : ViewModel() {
     private val _callTimer = MutableStateFlow("00:00")
     val callTimer: StateFlow<String> = _callTimer
 
-    private val _callStatusRaw = MutableStateFlow("initializing")
+    private val _callStatusRaw = MutableStateFlow("calling")
     val callStatusRaw: StateFlow<String> = _callStatusRaw
 
     fun updateTimer(seconds: Int) {

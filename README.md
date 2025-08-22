@@ -1,114 +1,209 @@
 
-# 📞 CiCare SDK Call for Android Kotlin
+# C-iCare SDK Call
 
-A lightweight call UI & notification SDK for Android, built on top of a signaling system and WebRTC call engine.
+A comprehensive Android SDK for implementing voice call functionality in your Android applications.  
+The **C-iCare SDK Call** provides easy-to-use APIs for making and receiving calls with built-in notification management and event handling.
 
-### Features
+## Features
+- **Outgoing Calls:** Initiate calls with customizable caller information
+- **Incoming Calls:** Handle incoming calls with notification support
+- **Permission Management:** Automatic permission handling for different Android versions
+- **Custom Ringtones:** Set custom ringtones for incoming calls
+- **Metadata Support:** Pass custom metadata with calls
+- **Foreground Services:** Proper handling of background call operations
 
-* 📱 Incoming & Outgoing Call Screens
-* 🔔 Full Notification Handling (incoming, ongoing)
-* ⏱ Call Timer & State Handling
-* ⚙️ Easy Integration via JitPack
+## Requirements
+- Minimum Android API Level: **23 (Android 6.0)**
+- Target Android API Level: **34+ (Android 14+)**
+- Kotlin: **1.7+**
+- Android Gradle Plugin: **7.0+**
 
----
+## Installation
+Add the dependency to your app's **build.gradle** file:
+```gradle
+dependencies {
+    implementation 'com.github.cicareteam:cicare-sdkcall:1.2.0-alpha.1'
+}
+```
 
-## 📦 Installation
+## Permissions
+The SDK automatically handles different permission requirements based on Android API levels.
 
-Add JitPack to `settings.gradle`:
+### API Level 23-27 (Android 6.0-8.1)
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+```
 
+### API Level 28-32 (Android 9.0-12L)
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+```
+
+### API Level 33 (Android 13)
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+```
+
+### API Level 34+ (Android 14+)
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+```
+
+## Quick Start
+
+### 1. Initialize the SDK
 ```kotlin
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        maven { url = uri("https://jitpack.io") }
+import cc.cicare.sdkcall.CiCareSdkCall
+
+class MyApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        CiCareSdkCall.init(this)
+        CiCareSdkCall.setAPI("BASE_URL_API", "API_TOKEN")
     }
 }
 ```
 
-Add the SDK to your app-level `build.gradle`:
-
+### 2. Request Permissions
 ```kotlin
-dependencies {
-    implementation("com.github.cicareteam:cicare-sdk-call:v1.2.0-alpha.1")
+import cc.cicare.sdkcall.CiCareSdkCall
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // Request permissions
+        CiCareSdkCall.checkAndRequestPermissions(this)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1001) {
+            val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (allGranted) {
+                onPermissionsGranted()
+            } else {
+                showPermissionDeniedDialog()
+            }
+        }
+    }
 }
 ```
 
----
+## Usage Examples
 
-## 🚀 Usage
-
-### 1. Init SDK
-
+### Making an Outgoing Call
 ```kotlin
-CiCareSdkCall.init(context).checkAndRequestPermissions()
+import cc.cicare.sdkcall.CiCareSdkCall
+
+fun makeOutgoingCall() {
+    val metadata = mapOf(
+        "call_id" to "12345",
+        "room_id" to "room_abc",
+        "custom_data" to "any_value"
+    )
+
+    CiCareSdkCall.makeCall(
+        callerId = "user123",
+        callerName = "John Doe",
+        callerAvatar = "https://example.com/avatar/john.jpg",
+        calleeId = "user456",
+        calleeName = "Jane Smith",
+        calleeAvatar = "https://example.com/avatar/jane.jpg",
+        checkSum = "generated_checksum",
+        metaData = metadata
+    )
+}
 ```
 
----
+> **Note:** Ensure you have set `BASE_URL_API` and `API_TOKEN` before making calls.
 
-### 2. Show Incoming Call
-
+### Handling Incoming Calls
 ```kotlin
-CiCareSdkCall.init(context).showIncoming(
-    callerId = "user123",
-    callerName = "John Doe",
-    callerAvatar = "https://url.com/avatar.jpg",
-    calleeId = "user789",
-    calleeName = "Alice",
-    calleeAvatar = "https://url.com/avatar2.jpg",
-    checkSum = "secure-checksum",
-    metaData = mapOf("key" to "value"),
-    tokenCall = "authTokenHere",
-    server = "https://your-signaling-server.com",
-    isFromPhone = false
-)
+override fun onMessageReceived(message: RemoteMessage) {
+    val data = message.data
+    val callerName = data["caller_name"] ?: "Unknown"
+    val callerId = data["caller_id"] ?: ""
+    val callerAvatar = data["caller_avatar"] ?: ""
+    val tokenCall = data["token"] ?: return
+    val fromPhone = data["from_phone"] ?: "false"
+    val server = data["server"] ?: return
+
+    CiCareSdkCall.init(this).showIncoming(
+        callerId = callerId,
+        callerName = callerName,
+        callerAvatar = callerAvatar,
+        calleeId = "",
+        calleeName = "",
+        calleeAvatar = "",
+        tokenCall = tokenCall,
+        server = server,
+        isFromPhone = fromPhone.toBoolean(),
+        checkSum = "",
+        messageActionListener = {
+            Toast.makeText(this, "Hello Message", Toast.LENGTH_LONG).show()
+        }
+    )
+}
 ```
 
----
-
-### 3. Make Outgoing Call
-
+### Setting Custom Ringtone
 ```kotlin
-CiCareSdkCall.init(context).makeCall(
-    callerId = "user123",
-    callerName = "John Doe",
-    callerAvatar = "https://url.com/avatar.jpg",
-    calleeId = "user789",
-    calleeName = "Alice",
-    calleeAvatar = "https://url.com/avatar2.jpg",
-    checkSum = "secure-checksum",
-    metaData = mapOf("key" to "value")
-)
+import android.net.Uri
+import cc.cicare.sdkcall.CiCareSdkCall
+
+fun setCustomRingtone() {
+    val ringtoneUri = Uri.parse("android.resource://your.package.name/raw/custom_ringtone")
+    CiCareSdkCall.setRingTone(ringtoneUri)
+}
 ```
 
-> ⚠️ `makeCall` is a `suspend` function — use in coroutine.
+## Troubleshooting
 
----
+### Common Issues
 
-## 🛠 Manifest Setup
-
-```xml
-<service
-    android:name="cc.cicare.sdkcall.services.CiCareCallService"
-    android:foregroundServiceType="microphone|phoneCall"
-    android:exported="false" />
-
-<activity
-    android:name="cc.cicare.sdkcall.notifications.ui.ScreenCallActivity"
-    android:launchMode="singleTop"
-    android:showWhenLocked="true"
-    android:exported="false" />
+#### 1. Permissions Not Granted
+**Problem:** Call functionality doesn't work  
+**Solution:** Ensure all required permissions are granted
+```kotlin
+if (!arePermissionsGranted()) {
+    CiCareSdkCall.checkAndRequestPermissions(this)
+    return
+}
 ```
 
----
+#### 2. SDK Not Initialized
+**Problem:** NullPointerException when calling SDK methods  
+**Solution:** Initialize the SDK before use
+```kotlin
+CiCareSdkCall.init(applicationContext)
+```
 
-## 🔐 Permissions
+#### 3. Foreground Service Issues on Android 8.0+
+**Problem:** Service crashes  
+**Solution:** Foreground service handling is automatic in SDK
 
-Automatically requested:
-
-* `RECORD_AUDIO`
-* `FOREGROUND_SERVICE`
-* `POST_NOTIFICATIONS` (Android 13+)
-* `FOREGROUND_SERVICE_PHONE_CALL` (Android 14+)
-* `FOREGROUND_SERVICE_MICROPHONE` (Android 14+)
-
----
+#### 4. Notification Issues on Android 13+
+**Problem:** Incoming call notifications not showing  
+**Solution:** Request `POST_NOTIFICATIONS` permission (SDK handles this automatically)
+```kotlin
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    CiCareSdkCall.checkAndRequestPermissions(this)
+}
+```

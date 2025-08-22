@@ -34,7 +34,6 @@ class MainActivity : ComponentActivity() {
         val context = this
         enableEdgeToEdge()
         val metaData: Map<String, String> = hashMapOf(
-            "initializing" to "Mulai...",
             "calling" to "Memanggil...",
             "incoming" to "Panggilan Masuk",
             "ringing" to "Berdering...",

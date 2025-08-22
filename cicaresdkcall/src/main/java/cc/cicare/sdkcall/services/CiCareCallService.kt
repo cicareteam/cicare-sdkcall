@@ -9,8 +9,6 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -21,8 +19,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
-import cc.cicare.sdkcall.libs.ApiClient
-import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.rtc.WebRTCEventCallback
@@ -69,7 +65,7 @@ class CiCareCallService:
 
     private var intent: Intent? = null
 
-    var callState = MutableStateFlow("initializing")
+    var callState = MutableStateFlow("connecting")
 
     private var metaData: Map<String, String> = hashMapOf(
         "call_busy" to "The customer is busy and cannot be reached",
@@ -196,8 +192,7 @@ class CiCareCallService:
             ACTION.INCOMING -> {
                 metaData["call_${callState.value}"] ?: callState.value
 
-                Log.i("PRII", callState.value)
-            }
+               }
 //                if (callState.value == "CONNECTED") {
 //                    // Sudah ada panggilan, langsung missed
 //                    Log.i("SDK Call", "ongoing call from: ${intent.getStringExtra("callee_name")}")
@@ -275,7 +270,7 @@ class CiCareCallService:
         webRTCManager.setAudioOutputToSpeaker(isSpeakerOn)
     }
 
-    private suspend fun initCall(server: String, token: String) {
+    suspend fun initCall(server: String, token: String) {
 
         webRTCManager.init()
         webRTCManager.initMic()
@@ -326,16 +321,11 @@ class CiCareCallService:
 
 
     @SuppressLint("MissingPermission")
-    private suspend fun onOutgoingCall(intent: Intent) {
+    private fun onOutgoingCall(intent: Intent) {
         outgoingIntent = intent
         //val callType = intent.getStringExtra("call_type") ?: "outgoing"
-        val calleeId = intent.getStringExtra("callee_id") ?: ""
-        val callerId = intent.getStringExtra("caller_id") ?: ""
         val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
-        val callerName = intent.getStringExtra("caller_name") ?: "unknown"
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
-        val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-        val checksum = intent.getStringExtra("checksum") ?: ""
         CallNotificationManager.provideNotificationManagerCompat(this,
             "CALL_OUTGOING_CHANNEL_ID",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -352,50 +342,14 @@ class CiCareCallService:
 
         startForeground(101, notification.build())
         startActivity(Intent(this, ScreenCallActivity::class.java).apply {
+            action = ACTION.OUTGOING
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtras(intent)
         })
-        if (!checkInternetConnection()) {
-            connectionListener?.onNetworkError(state = metaData["call_failed_no_connection"]
-                ?: "No internet connection", systemError = false )
-        }
-        try {
-            val response = ApiClient.api.requestCall(
-                CallRequest(
-                    callerId=callerId,
-                    callerName=callerName,
-                    callerAvatar=callerAvatar,
-                    calleeId=calleeId,
-                    calleeName=calleeName,
-                    calleeAvatar=calleeAvatar,
-                    checkSum=checksum,
-                )
-            )
-            if (response.isSuccessful) {
-                val apiResponse = response.body()
-                apiResponse?.let {
-                    eventListener.onCallStateChanged(CallState.CALLING)
-                    outgoingCallStateUpdate("calling")
-                    initCall(it.server, it.token)
-                }
-            }
-        } catch (e: Exception) {
-            //eventListener.onCallStateChanged(CallState.ENDED)
-
-//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-//                stopForeground(STOP_FOREGROUND_REMOVE)
-//            else
-//                stopForeground(true)
-//            stopSelf()
-//            throw Exception(e)
-            connectionListener?.onNetworkError(state = metaData["call_failed_api"]
-                ?: "Call failed due to system error", systemError = true)
-            Log.e("SDK CALL", e.message.toString())
-        }
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
-    private fun outgoingCallStateUpdate(callState: String) {
+    fun outgoingCallStateUpdate(callState: String) {
         val notificationManager = CallNotificationManager.provideNotificationManagerCompat(this,
             "CALL_OUTGOING_CHANNEL_ID",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -414,13 +368,6 @@ class CiCareCallService:
         )
 
         notificationManager.notify(101, notification.build())
-    }
-    @RequiresPermission(Manifest.permission.ACCESS_NETWORK_STATE)
-    private fun checkInternetConnection(): Boolean {
-        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun onOngoingCall(intent: Intent) {
@@ -531,7 +478,6 @@ class CiCareCallService:
 
         when(callState) {
             CallState.CALLING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
-            CallState.INITIALIZING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.ANSWERING -> serviceScope.launch { ackAnswer() }
             CallState.RINGING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)

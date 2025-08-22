@@ -51,11 +51,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val fromPhone = data["from_phone"] ?: "false"
         val server = data["server"] ?: return
 
-        //callServiceRepository.startService(callerId, callerName, callerAvatar)
-
-
-        Log.i("SDK Call", "notifikasi masuk $data")
-
         CiCareSdkCall.init(this).showIncoming(
             callerId = callerId,
             callerName = callerName,
@@ -70,6 +65,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             messageActionListener = {
                 Toast.makeText(this, "Hello Message", Toast.LENGTH_LONG).show()
             }
-            )
+        )
     }
 }

@@ -8,11 +8,6 @@ import org.webrtc.PeerConnection.PeerConnectionState
 enum class CallState {
 
     /**
-     * Call is initializing
-     */
-    INITIALIZING,
-
-    /**
      * Call is outgoing.
      */
     CALLING,

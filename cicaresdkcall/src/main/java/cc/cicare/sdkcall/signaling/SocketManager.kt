@@ -59,10 +59,10 @@ class SocketManager {
             callStateListener?.onCallStateChanged(CallState.ANSWERING)
         }
 
-        // Event when the callee accepts the call
-        socket?.on("ACCEPTED") { _ ->
-            callStateListener?.onCallStateChanged(CallState.CONNECTING)
-        }
+//        // Event when the callee accepts the call
+//        socket?.on("ACCEPTED") { _ ->
+//            callStateListener?.onCallStateChanged(CallState.CONNECTING)
+//        }
 
         // Event when the callee accepts the call
         socket?.on("CONNECTED") { _ ->

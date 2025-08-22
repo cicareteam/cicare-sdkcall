@@ -33,17 +33,15 @@ class IncomingCallService : Service(), CallStateListener {
     private var callerName: String? = null
     private var callerAvatar: String? = null
     private var metaData: Map<String, String> = hashMapOf(
-        "initializing" to "Initializing...",
-        "calling" to "Calling...",
-        "incoming" to "Incoming Call",
-        "ringing" to "Ringing",
-        "connected" to "Connected",
-        "ended" to "Ended",
-        "answer" to "Answer",
-        "decline" to "Decline",
-        "mute" to "Mute",
-        "unmute" to "Unmute",
-        "speaker" to "Speaker",
+        "call_calling" to "Calling...",
+        "call_incoming" to "Incoming Call",
+        "call_ringing" to "Ringing",
+        "call_connected" to "Connected",
+        "call_end" to "Ended",
+        "call_answer" to "Answer",
+        "call_decline" to "Decline",
+        "call_btn_mute" to "Mute",
+        "call_btn_speaker" to "Speaker",
     )
     private var isFromPhone = false
     private var hasActiveCall = false
