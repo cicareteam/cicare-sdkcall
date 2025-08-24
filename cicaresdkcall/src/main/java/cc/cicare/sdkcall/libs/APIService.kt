@@ -32,10 +32,14 @@ interface ApiService {
 }
 
 object ApiClient {
-    var BASE_URL = "https://sip-gw.c-icare.cc:8443/" // untuk emulator Android
-    var AUTH_TOKEN = "xHNYBNtmnckl8GJXQoBSMQTz8oJsa3j5zKk5FK00Y5uOXGzwXcot7u5WM8gIpV8dFQsLNaaozMt8k3Y1fTSSxQyzOAMeuFPIzPNqJhk0GDvjHGkBBkeqZNFU5UlRF4aj" // Ganti dengan token dinamis jika perlu
+    var BASE_URL = "" // untuk emulator Android
+    var AUTH_TOKEN = "" // Ganti dengan token dinamis jika perlu
 
     val api: ApiService by lazy {
+        if (BASE_URL.isBlank()) {
+            throw IllegalStateException("BASE_URL cannot be empty.")
+        }
+
         val logging = HttpLoggingInterceptor().apply {
             setLevel(HttpLoggingInterceptor.Level.BODY)
         }

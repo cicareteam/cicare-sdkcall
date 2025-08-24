@@ -51,6 +51,7 @@ class SocketManager {
 
         // Event when the callee accepts the call
         socket?.on("INIT_OK") { _ ->
+            Log.i("SDK CALL", "INIT_OK")
             callStateListener?.onCallStateChanged(CallState.CALLING)
         }
 

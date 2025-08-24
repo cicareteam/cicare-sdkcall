@@ -1,6 +1,5 @@
 package cc.cicare.sdkcall.notifications.ui
 
-import android.Manifest
 import android.annotation.SuppressLint
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -9,9 +8,10 @@ import kotlinx.coroutines.*
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
-import android.content.pm.PackageManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -59,7 +59,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -261,31 +260,29 @@ class ScreenCallActivity :
                 if (response.isSuccessful) {
                     val apiResponse = response.body()
                     apiResponse?.let {
-                        this.onCallStateChanged(CallState.CALLING)
-                        when {
-                            ContextCompat.checkSelfPermission(
-                                this,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) == PackageManager.PERMISSION_GRANTED -> {
-                                callService.outgoingCallStateUpdate("calling")
-                            }
-                        }
                         callService.initCall(it.server, it.token)
                     }
-                }
-            } catch (e: Exception) {
-                if (e.cause == null) {
-                    this.onNetworkError(
-                        state = (metaData["call_failed_no_connection"]
-                            ?: "No internet connection") as String, systemError = false
-                    )
                 } else {
                     this.onNetworkError(
                         state = (metaData["call_failed_api"]
                             ?: "Call failed due to system error") as String, systemError = true
                     )
+                    Log.e("SDK CALL", "Error: ${response.code()}")
                 }
-                Log.e("SDK CALL D", e.cause.toString())
+            } catch (e: Exception) {
+                Log.e("SDK CALL", "Error: ${e.message}")
+                /*if (e.cause == null && ApiClient.BASE_URL.isNotBlank()) {
+                    this.onNetworkError(
+                        state = (metaData["call_failed_no_connection"]
+                            ?: "No internet connection") as String, systemError = false
+                    )
+                } else {*/
+                    this.onNetworkError(
+                        state = (metaData["call_failed_api"]
+                            ?: "Call failed due to system error") as String, systemError = true
+                    )
+                //}
+                Log.e("SDK CALL", "Error: ${e.cause} ${e.message}")
             }
         }
     }
@@ -303,35 +300,13 @@ class ScreenCallActivity :
         }
     }
 
-    private suspend fun checkInternetConnection(): Boolean {
-        /*if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_NETWORK_STATE
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return false
-        }
+    private fun checkInternetConnection(): Boolean {
         val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)*/
-        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        Log.i("SDK CALL", "Cek Internet")
-        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return false
-        Log.i("SDK CALL", "Cek Internet 2")
-        // Cek koneksi internet real via ping
-        return withContext(Dispatchers.IO) {
-            try {
-                val ipAddr: InetAddress = InetAddress.getByName("8.8.8.8") // Google DNS
-                Log.i("SDK CALL", "Cek Internet $ipAddr")
-                !ipAddr.equals("")
-            } catch (e: Exception) {
-                Log.e("SDK CALL", e.message.toString())
-                false
-            }
-        }
+
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     override fun onStart() {
@@ -476,10 +451,14 @@ class ScreenCallActivity :
                         answer()
                     },
                     onEndCallClick = {
-                        if (callStatusRaw != "connected") {
+                        if (callType == "incoming" && callStatusRaw != "connected") {
                             incomingService?.reject()
                         } else {
-                            hangup()
+                            if (callStatusRaw == "calling") {
+                                callService?.cancelCall()
+                            } else {
+                                hangup()
+                            }
                         }
                         finish()
                     },

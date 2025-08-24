@@ -118,6 +118,7 @@ class CiCareCallService:
 
     override fun onCreate() {
         requestAudioFocus()
+        Log.i("SDK Call", "onCreate")
         webRTCManager = WebRTCManager(this, this)
         socketManager = SocketManager()
         socketManager.setCallStateListener(this)
@@ -271,7 +272,6 @@ class CiCareCallService:
     }
 
     suspend fun initCall(server: String, token: String) {
-
         webRTCManager.init()
         webRTCManager.initMic()
         socketManager.connect(server, token)
@@ -346,6 +346,15 @@ class CiCareCallService:
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtras(intent)
         })
+    }
+
+    fun cancelCall() {
+        socketManager.send("CANCEL", JSONObject().apply {})
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        else
+            stopForeground(true)
+        stopSelf()
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)

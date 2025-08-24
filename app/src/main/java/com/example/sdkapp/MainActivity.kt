@@ -26,6 +26,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        CiCareSdkCall.init(this)
+        CiCareSdkCall.setAPI("https://sip-gw.c-icare.cc:8443/",
+            "Q8v7X2pL9sT4bW1eR6kJ3zF0aC5dN8hU7yV5qS2mP4aZ6xC3rB8wL1tG9fE0hJ7kU5sT2vB9nM3qP8rD6wF4zL1yC7xA0hE")
         //CiCareSdkCall.setRingTone()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -58,7 +61,7 @@ class MainActivity : ComponentActivity() {
                             .padding(24.dp),
                         onStartOutbound = {
                             lifecycleScope.launch {
-                                CiCareSdkCall.init(context).makeCall(
+                                CiCareSdkCall.makeCall(
                                     "3",
                                     "Anis",
                                     "https://avatar.iran.liara.run/public/",
