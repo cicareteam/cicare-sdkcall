@@ -9,9 +9,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.ConnectivityManager
-import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -76,7 +74,6 @@ import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import coil.compose.AsyncImage
 import org.webrtc.PeerConnection
-import java.net.InetAddress
 import kotlin.collections.HashMap
 
 data class CallInfo (

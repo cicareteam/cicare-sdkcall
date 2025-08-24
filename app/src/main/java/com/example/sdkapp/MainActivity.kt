@@ -34,7 +34,6 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             CiCareSdkCall.init(this).checkAndRequestPermissions(this)
         }
-        val context = this
         enableEdgeToEdge()
         val metaData: Map<String, String> = hashMapOf(
             "calling" to "Memanggil...",
