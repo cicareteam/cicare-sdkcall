@@ -62,7 +62,7 @@ dependencies {
     implementation(libs.firebase.analytics)
     kapt(libs.hilt.android.compiler)
     implementation(libs.hilt.android)
-    implementation("com.google.firebase:firebase-messaging:24.1.2")
+    implementation(libs.firebase.messaging)
     //implementation("com.github.cicareteam:cicare-sdk-call:v1.2.0-alpha.1")
     implementation(project(":cicaresdkcall"))
     androidTestImplementation(libs.androidx.junit)
@@ -72,10 +72,10 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    androidTestImplementation("com.google.dagger:hilt-android-testing:2.57")
-    kaptAndroidTest("com.google.dagger:hilt-compiler:2.57")
+    androidTestImplementation(libs.hilt.android.testing)
+    kaptAndroidTest(libs.hilt.compiler)
 
     // For local unit tests
-    testImplementation("com.google.dagger:hilt-android-testing:2.57")
-    kaptTest("com.google.dagger:hilt-compiler:2.57")
+    testImplementation(libs.hilt.android.testing)
+    kaptTest(libs.hilt.compiler)
 }

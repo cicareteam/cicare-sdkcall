@@ -2,6 +2,7 @@
 agp = "8.11.1"
 coilCompose = "2.7.0"
 firebaseBom = "34.0.0"
+firebaseMessagingVersion = "25.0.0"
 googleServices = "4.4.3"
 hiltAndroid = "2.57"
 hiltAndroidTesting = "2.57"
@@ -33,6 +34,7 @@ androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", 
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessagingVersion" }
 google-services = { module = "com.google.gms:google-services", version.ref = "googleServices" }
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hiltAndroid" }
 hilt-android-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hiltAndroid" }
