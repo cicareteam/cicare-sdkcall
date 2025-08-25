@@ -252,12 +252,14 @@ class ScreenCallActivity :
                         calleeName = callInfo.calleeName,
                         calleeAvatar = callInfo.calleeAvatar,
                         checkSum = callInfo.checksum,
+                        isInternal = true
                     )
                 )
                 if (response.isSuccessful) {
                     val apiResponse = response.body()
                     apiResponse?.let {
                         callService.initCall(it.server, it.token)
+                        Log.i("SDK Call", it.callee)
                     }
                 } else {
                     this.onNetworkError(

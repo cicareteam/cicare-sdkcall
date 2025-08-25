@@ -16,7 +16,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         Log.i("SDK Call", token)
         CoroutineScope(Dispatchers.IO).launch {
-            val response = ApiClient.api.saveToken(TokenSaveRequest(4, token))
+            val response = ApiClient.api.saveToken(TokenSaveRequest(3, token))
             if (response.isSuccessful) {
                 Log.d("SDK Call", "Token saved")
             } else {

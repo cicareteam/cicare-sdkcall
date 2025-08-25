@@ -30,7 +30,7 @@ class SocketManager {
     fun setWebrtc(webRTCManager: WebRTCManager) {
         this.webRTCManager = webRTCManager
     }
-
+    
     /**
      * Connects to the signaling server via WebSocket using Socket.IO protocol.
      *
@@ -48,6 +48,22 @@ class SocketManager {
 
         socket = IO.socket(wssUrl, opts)
         socket?.connect()
+
+        socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
+            val error = args.getOrNull(0)
+            Log.e("SocketManager", "Socket connection error: $error")
+            //callStateListener?.onCallStateChanged(CallState.ENDED)
+
+            this.disconnect()
+        }
+
+        socket?.on("MISSED_CALL") {
+            callStateListener?.onCallStateChanged(CallState.ENDED)
+        }
+
+        socket?.on("RINGING_OK") {
+            callStateListener?.onCallStateChanged(CallState.RINGING_OK)
+        }
 
         // Event when the callee accepts the call
         socket?.on("INIT_OK") { _ ->

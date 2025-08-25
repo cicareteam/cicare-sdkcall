@@ -10,6 +10,7 @@ import android.media.AudioManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.telecom.Call
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.annotation.RequiresPermission
@@ -44,10 +45,12 @@ class IncomingCallService : Service(), CallStateListener {
         "call_btn_speaker" to "Speaker",
     )
     private var isFromPhone = false
-    private var hasActiveCall = false
 
+    private var intent: Intent? = null
 
     private var callListener: CallStateListener? = null
+
+    private var isConnected: Boolean = false
 
     private val binder = LocalBinder()
 
@@ -67,7 +70,6 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i("SDK Call", "$hasActiveCall")
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)
                 ?.mapNotNull {
@@ -119,7 +121,7 @@ class IncomingCallService : Service(), CallStateListener {
 
         val description = "Missed call from $callerName"
 
-        val notificationManager = CallNotificationManager.provideNotificationManagerCompat(
+        CallNotificationManager.provideNotificationManagerCompat(
             this, "CALL_MISSED_CHANNEL_ID",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
             NotificationManager.IMPORTANCE_LOW else Notification.PRIORITY_LOW
@@ -131,7 +133,7 @@ class IncomingCallService : Service(), CallStateListener {
             callerAvatar ?: "",
             description
         )
-        notificationManager.notify(101, notification.build())
+        startForeground(101, notification.build())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
             stopForeground(STOP_FOREGROUND_DETACH)
         else
@@ -140,36 +142,41 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     private fun onIncomingCall(intent: Intent) {
-        val callerName = intent.getStringExtra("caller_name") ?: "unknown"
-        val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
+
         val token = intent.getStringExtra("token") ?: return
         val server = intent.getStringExtra("server") ?: return
         isFromPhone = intent.getBooleanExtra("from_phone", false)
-        CallNotificationManager.provideNotificationManagerIncoming(
-            this, "CALL_INCOMING_CHANNEL_ID",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                NotificationManager.IMPORTANCE_HIGH else Notification.PRIORITY_LOW)
-        val notification = CallNotificationManager.incomingCallNotificationBuilder(
-            this,
-            intent,
-            "CALL_INCOMING_CHANNEL_ID",
-            callerName,
-            callerAvatar
-        )
-//        if (isFromPhone) {
-//            webRTCManager.init()
-//            webRTCManager.initMic()
-//        }
-        startForeground(101, notification.build())
+        this.intent = Intent(intent)
+
         initReceive(server, token, isFromPhone)
-        Log.i("SDK Call", "INCOMING 2")
+    }
+
+    private fun showIncomingScreen(intent: Intent?) {
+        intent?.let {
+            val callerName = intent.getStringExtra("caller_name") ?: "unknown"
+            val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
+            CallNotificationManager.provideNotificationManagerIncoming(
+                this, "CALL_INCOMING_CHANNEL_ID",
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                    NotificationManager.IMPORTANCE_HIGH else Notification.PRIORITY_LOW)
+            val notification = CallNotificationManager.incomingCallNotificationBuilder(
+                this,
+                intent,
+                "CALL_INCOMING_CHANNEL_ID",
+                callerName,
+                callerAvatar
+            )
+            startForeground(101, notification.build())
+        }
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
-            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-                action = "INCOMING"
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtras(intent)
-            })
+            intent?.let {
+                startActivity(Intent(this, ScreenCallActivity::class.java).apply {
+                    action = "INCOMING"
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    putExtras(it)
+                })
+            }
         }
     }
 
@@ -228,7 +235,15 @@ class IncomingCallService : Service(), CallStateListener {
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     override fun onCallStateChanged(callState: CallState) {
         if (callState == CallState.ENDED) {
-            showMissedCallNotification()
+            if (!isConnected)
+                showMissedCallNotification()
+            callListener?.onCallStateChanged(callState)
+            isConnected = false
+        } else if (callState == CallState.CONNECTED){
+            isConnected = true
+        }
+        if ( callState == CallState.RINGING_OK) {
+            this.showIncomingScreen(intent)
         }
     }
 

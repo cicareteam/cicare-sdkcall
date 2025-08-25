@@ -503,6 +503,8 @@ class CiCareCallService:
                     stopForeground(true)
                 stopSelf()
             }
+
+            CallState.RINGING_OK -> {}
         }
     }
 

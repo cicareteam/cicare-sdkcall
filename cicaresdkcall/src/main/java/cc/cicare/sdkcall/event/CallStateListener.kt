@@ -21,6 +21,7 @@ enum class CallState {
      * Call is incoming and ringing on the callee side.
      */
     RINGING,
+    RINGING_OK,
 
     /**
      * Call is being connected and signaling/negotiation is in progress.
