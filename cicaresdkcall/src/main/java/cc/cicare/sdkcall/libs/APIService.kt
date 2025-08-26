@@ -29,7 +29,8 @@ data class CallResponse(
 
 data class Error(
     val code: Int,
-    val message: String
+    val message: String,
+    val details: Any? = null
 )
 
 sealed class CallResult {
