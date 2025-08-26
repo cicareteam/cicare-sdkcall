@@ -12,7 +12,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -73,6 +75,7 @@ import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import coil.compose.AsyncImage
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
 
@@ -520,8 +523,10 @@ class ScreenCallActivity :
         // }
         // }
         // } else
-        if (callState == CallState.ENDED) {
-            finish()
+        if (callState == CallState.ENDED || callState == CallState.REFUSED || callState == CallState.BUSY) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                finish()
+            }, 2000) // 3000 ms = 3 detik
         }
     }
 
@@ -542,7 +547,9 @@ class ScreenCallActivity :
     }
 
     override fun onSignalStateChanged(state: String) {
-        connectionState = if (state == "connected") "" else state
+        if (callService?.callState == MutableStateFlow("connected")) {
+            connectionState = if (state == "connected") "" else state
+        }
     }
 
     override fun onNetworkError(state: String, systemError: Boolean) {

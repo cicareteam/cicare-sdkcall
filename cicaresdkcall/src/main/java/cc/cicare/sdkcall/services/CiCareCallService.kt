@@ -272,16 +272,11 @@ class CiCareCallService:
     }
 
     suspend fun initCall(server: String, token: String) {
+        Log.i("SDK CALL", "init call service")
         webRTCManager.init()
         webRTCManager.initMic()
         socketManager.connect(server, token)
-        socketManager.send("INIT_CALL", JSONObject().apply {
-            put("is_caller", true)
-            put("sdp", JSONObject().apply {
-                put("type", "offer")
-                put("sdp", webRTCManager.createOffer().description)
-            })
-        })
+        socketManager.send("INIT_CALL", JSONObject().apply {})
     }
 
     fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
@@ -490,8 +485,16 @@ class CiCareCallService:
             CallState.ANSWERING -> serviceScope.launch { ackAnswer() }
             CallState.RINGING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
-            CallState.BUSY -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
-            CallState.REFUSED -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.BUSY -> {
+                outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+                this.eventListener.onCallStateChanged(callState)
+                stopSelf()
+            }
+            CallState.REFUSED -> {
+                outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+                this.eventListener.onCallStateChanged(callState)
+                stopSelf()
+            }
             CallState.CONNECTED -> {
                 intent?.let { onOngoingCall(it) }
             }

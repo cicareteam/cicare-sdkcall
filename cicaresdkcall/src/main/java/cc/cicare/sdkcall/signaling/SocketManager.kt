@@ -6,6 +6,9 @@ import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.rtc.WebRTCManager
 import io.socket.client.IO
 import io.socket.client.Socket
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.SessionDescription
 
@@ -30,7 +33,7 @@ class SocketManager {
     fun setWebrtc(webRTCManager: WebRTCManager) {
         this.webRTCManager = webRTCManager
     }
-    
+
     /**
      * Connects to the signaling server via WebSocket using Socket.IO protocol.
      *
@@ -69,6 +72,23 @@ class SocketManager {
         socket?.on("INIT_OK") { _ ->
             Log.i("SDK CALL", "INIT_OK")
             callStateListener?.onCallStateChanged(CallState.CALLING)
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    val offer = webRTCManager?.createOffer()
+
+                    offer?.let {
+                        send("SDP_OFFER", JSONObject().apply {
+                            put("is_caller", true)
+                            put("sdp", JSONObject().apply {
+                                put("type", "offer")
+                                put("sdp", it.description)
+                            })
+                        })
+                    }
+                } catch (e: Exception) {
+                    Log.e("SDK CALL", "Error creating offer: ${e.message}", e)
+                }
+            }
         }
 
         // Event when the callee accepts the call
@@ -114,12 +134,17 @@ class SocketManager {
             callStateListener?.onCallStateChanged(CallState.RINGING)
         }
 
+        // Ringing event sent to callee to indicate incoming call
+        socket?.on("REJECTED") { _ ->
+            callStateListener?.onCallStateChanged(CallState.REFUSED)
+        }
+
         // Received SDP answer from remote peer
         socket?.on("SDP_ANSWER") { args ->
             //callEventListener.onCallStateChanged(CallState.CONNECTING)
             val json = args[0] as JSONObject
             val sdpString = json.getString("sdp")
-            Log.i("SDP_ANSWER", sdpString)
+            Log.i("SDK CALL SDP_ANSWER", sdpString)
             val sdp = SessionDescription(SessionDescription.Type.ANSWER, sdpString)
             webRTCManager?.setRemoteDescription(sdp)
         }
