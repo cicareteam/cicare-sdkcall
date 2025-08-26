@@ -68,14 +68,19 @@ import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
 import cc.cicare.sdkcall.libs.ApiClient
+import cc.cicare.sdkcall.libs.CallRepository
 import cc.cicare.sdkcall.libs.CallRequest
+import cc.cicare.sdkcall.libs.CallResult
 import cc.cicare.sdkcall.notifications.ui.icons.SpeakerBluetooth
 import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import coil.compose.AsyncImage
+import com.google.gson.JsonArray
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
 
@@ -246,7 +251,7 @@ class ScreenCallActivity :
             )
         } else {
             try {
-                val response = ApiClient.api.requestCall(
+                when (val result = CallRepository.requestCall(
                     CallRequest(
                         callerId = callInfo.callerId,
                         callerName = callInfo.callerName,
@@ -256,35 +261,44 @@ class ScreenCallActivity :
                         calleeAvatar = callInfo.calleeAvatar,
                         checkSum = callInfo.checksum,
                     )
-                )
-                if (response.isSuccessful) {
-                    val apiResponse = response.body()
-                    apiResponse?.let {
-                        callService.initCall(it.server, it.token)
-                        Log.i("SDK Call", it.callee)
+                )) {
+                    is CallResult.Success -> {
+                        val apiResponse = result.data
+                        Log.e("SDK CALL", "Success: $apiResponse")
+                        callService.initCall(apiResponse.server, apiResponse.token)
+                        Log.i("SDK Call", apiResponse.callee)
                     }
-                } else {
-                    this.onNetworkError(
-                        state = (metaData["call_failed_api"]
-                            ?: "Call failed due to system error") as String, systemError = true
-                    )
-                    Log.e("SDK CALL", "Error: ${response.code()}")
+
+                    is CallResult.Failure -> {
+                        Log.e("SDK CALL", "Error: ${result.error.code} - ${result.error.message}")
+                        if (result.error.code == 400) {
+                            val c = JSONObject(result.error.message)
+                            if (c.get("code") == 3) {
+                                this.onNetworkError(
+                                    state = (metaData[c.get("message")]
+                                        ?: c.get("message")) as String,
+                                    systemError = false
+                                )
+                            }
+                        } else {
+                            this.onNetworkError(
+                                state = (metaData["call_failed_api"]
+                                    ?: "Call failed due to system error") as String,
+                                systemError = true
+                            )
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("SDK CALL", "Error: ${e.message}")
-                /*if (e.cause == null && ApiClient.BASE_URL.isNotBlank()) {
-                    this.onNetworkError(
-                        state = (metaData["call_failed_no_connection"]
-                            ?: "No internet connection") as String, systemError = false
-                    )
-                } else {*/
-                    this.onNetworkError(
-                        state = (metaData["call_failed_api"]
-                            ?: "Call failed due to system error") as String, systemError = true
-                    )
-                //}
+                this.onNetworkError(
+                    state = (metaData["call_failed_api"]
+                        ?: "Call failed due to system error") as String,
+                    systemError = true
+                )
                 Log.e("SDK CALL", "Error: ${e.cause} ${e.message}")
             }
+
         }
     }
 

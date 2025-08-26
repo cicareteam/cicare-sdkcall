@@ -27,6 +27,16 @@ data class CallResponse(
     val server: String
 )
 
+data class Error(
+    val code: Int,
+    val message: String
+)
+
+sealed class CallResult {
+    data class Success(val data: CallResponse): CallResult()
+    data class Failure(val error: Error): CallResult()
+}
+
 interface ApiService {
     @POST("api/sdk-call/one2one")
     suspend fun requestCall(@Body request: CallRequest): Response<CallResponse>
@@ -63,5 +73,26 @@ object ApiClient {
             .client(client)
             .build()
             .create(ApiService::class.java)
+    }
+
+}
+
+object CallRepository {
+    suspend fun requestCall(request: CallRequest): CallResult {
+        return try {
+            val response = ApiClient.api.requestCall(request)
+            if (response.isSuccessful && response.body() != null) {
+                CallResult.Success(response.body()!!)
+            } else {
+                CallResult.Failure(
+                    Error(
+                        code = response.code(),
+                        message = response.errorBody()?.string() ?: "Unknown error"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            CallResult.Failure(Error(code = -1, message = e.localizedMessage ?: "Unexpected error"))
+        }
     }
 }

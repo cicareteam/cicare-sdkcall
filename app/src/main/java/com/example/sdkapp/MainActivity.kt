@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                                     "4",
                                     "Al",
                                     "https://avatar.iran.liara.run/public/",
-                                    "",
+                                    "asdfasdfasdfsadfasdf",
                                     metaData
                                 )
                             }
