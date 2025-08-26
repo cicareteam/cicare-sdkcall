@@ -18,7 +18,6 @@ data class CallRequest(
     val calleeName: String,
     val calleeAvatar: String,
     val checkSum: String,
-    val isInternal: Boolean
 )
 
 data class CallResponse(

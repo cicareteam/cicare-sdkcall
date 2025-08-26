@@ -255,7 +255,6 @@ class ScreenCallActivity :
                         calleeName = callInfo.calleeName,
                         calleeAvatar = callInfo.calleeAvatar,
                         checkSum = callInfo.checksum,
-                        isInternal = true
                     )
                 )
                 if (response.isSuccessful) {
