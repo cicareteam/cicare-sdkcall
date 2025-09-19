@@ -3,8 +3,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.gms.google.services)
-    id("kotlin-kapt")
-    id("dagger.hilt.android.plugin")
 }
 
 android {
@@ -31,11 +29,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "11"
     }
     buildFeatures {
         compose = true
@@ -60,8 +58,6 @@ dependencies {
     implementation(libs.converter.gson)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
-    kapt(libs.hilt.android.compiler)
-    implementation(libs.hilt.android)
     implementation(libs.firebase.messaging)
     //implementation("com.github.cicareteam:cicare-sdk-call:v1.2.0-alpha.1")
     implementation(project(":cicaresdkcall"))
@@ -71,11 +67,4 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-
-    androidTestImplementation(libs.hilt.android.testing)
-    kaptAndroidTest(libs.hilt.compiler)
-
-    // For local unit tests
-    testImplementation(libs.hilt.android.testing)
-    kaptTest(libs.hilt.compiler)
 }

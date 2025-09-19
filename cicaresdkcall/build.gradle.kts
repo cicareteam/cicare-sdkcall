@@ -1,15 +1,13 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
-    id("kotlin-kapt")
-    id("dagger.hilt.android.plugin")
     alias(libs.plugins.kotlin.compose)
     `maven-publish`
 }
 
 android {
     namespace = "cc.cicare.sdkcall"
-    version = "1.2.0-rc.6"
+    version = "1.2.0-rc.6.1"
     compileSdk = 36
 
     defaultConfig {
@@ -29,11 +27,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "11"
     }
     buildFeatures {
         compose = true
@@ -57,7 +55,6 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    kapt(libs.hilt.android.compiler)
     implementation(libs.coil.compose) // versi terbaru per Juli 2025
     implementation(libs.retrofit)
     implementation(libs.converter.gson)
@@ -66,8 +63,6 @@ dependencies {
         exclude("org.json", "json")
     }
 
-    implementation(libs.hilt.android)
-    kapt(libs.hilt.compiler)
     implementation(libs.stream.webrtc.android)
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
@@ -76,12 +71,6 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
-    androidTestImplementation(libs.hilt.android.testing)
-    kaptAndroidTest(libs.hilt.compiler)
-
-    // For local unit tests
-    testImplementation(libs.hilt.android.testing)
-    kaptTest(libs.hilt.compiler)
 }
 
 afterEvaluate {
@@ -90,7 +79,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 groupId = "com.github.cicareteam"
                 artifactId = "cicare-sdkcall"
-                version = "1.2.0-rc.6"
+                version = "1.2.0-rc.6.1"
                 from(components["release"])
             }
         }

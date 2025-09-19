@@ -18,7 +18,6 @@
 
 
     <application
-        android:name=".MyApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -52,9 +51,6 @@
             android:foregroundServiceType="phoneCall"/>
         <service android:name="cc.cicare.sdkcall.services.CiCareCallService"
             android:foregroundServiceType="microphone|phoneCall"
-            android:exported="false"/>
-        <service android:name="cc.cicare.sdkcall.services.CallService"
-            android:foregroundServiceType="phoneCall"
             android:exported="false"/>
     </application>
 
