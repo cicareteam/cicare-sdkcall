@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "575698288682",
+    "project_id": "c-icare-sdk-call",
+    "storage_bucket": "c-icare-sdk-call.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:575698288682:android:af2ff869b2e9c978f90353",
+        "android_client_info": {
+          "package_name": "cc.cicare.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4xBSAPIBTO4mTij9vTRRAwgHTevLslJw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:575698288682:android:f240b45f9ee29486f90353",
+        "android_client_info": {
+          "package_name": "com.example.sdkapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4xBSAPIBTO4mTij9vTRRAwgHTevLslJw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
