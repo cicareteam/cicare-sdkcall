@@ -2,6 +2,7 @@ package cc.cicare.app
 
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,12 +20,22 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import cc.cicare.sdkcall.CiCareSdkCall
 import cc.cicare.app.theme.MyApplicationTheme
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+//        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+//            if (!task.isSuccessful) {
+//                Log.w("SDK CALL", "Fetching FCM token failed", task.exception)
+//                return@addOnCompleteListener
+//            }
+//            val token = task.result
+//            Log.d("SDK CALL", "FCM Token: $token")
+//        }
 
         CiCareSdkCall.init(this)
         CiCareSdkCall.setAPI("https://gsm-sdk.c-icare.cc:8443/",
@@ -63,11 +74,11 @@ class MainActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 CiCareSdkCall.makeCall(
                                     "3",
-                                    "",
-                                    "",
+                                    "Anas",
+                                    "https://avatar.iran.liara.run/public/boy",
                                     "4",
                                     "",
-                                    "",
+                                    "https://avatar.iran.liara.run/public/boy",
                                     "asdfasdfasdfsadfasdf",
                                     metaData
                                 )

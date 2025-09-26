@@ -245,7 +245,7 @@ class CiCareCallService:
     fun hangup() {
         socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
         if (::eventListener.isInitialized)
-            eventListener.onCallStateChanged(CallState.ENDED)
+            eventListener.onCallStateChanged(CallState.END)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -499,7 +499,7 @@ class CiCareCallService:
             CallState.CONNECTED -> {
                 intent?.let { onOngoingCall(it) }
             }
-            CallState.ENDED -> {
+            CallState.END -> {
                 stopTimer()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
                     stopForeground(STOP_FOREGROUND_REMOVE)

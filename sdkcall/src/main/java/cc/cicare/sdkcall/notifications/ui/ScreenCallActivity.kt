@@ -134,7 +134,7 @@ class ScreenCallActivity :
         "call_temporarily_unavailable" to "Currently unreachable",
         "call_lost_connection" to "Connection lost",
         "call_weak_signal" to "Weak Signal",
-        "call_name_title" to "Xanh SM Customer",
+        //"call_name_title" to "Xanh SM Customer",
         "call_btn_message" to "Send Message",
         "call_btn_mute" to "Mute",
         "call_btn_speaker" to "Speaker",
@@ -540,7 +540,7 @@ class ScreenCallActivity :
         // }
         // }
         // } else
-        if (callState == CallState.ENDED || callState == CallState.REFUSED || callState == CallState.BUSY) {
+        if (callState == CallState.END || callState == CallState.REFUSED || callState == CallState.BUSY) {
             Handler(Looper.getMainLooper()).postDelayed({
                 finish()
             }, 2000) // 3000 ms = 3 detik

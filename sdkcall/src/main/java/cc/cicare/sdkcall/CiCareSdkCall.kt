@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -15,6 +17,7 @@ import cc.cicare.sdkcall.libs.ApiClient
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
+import org.json.JSONObject
 import java.lang.ref.WeakReference
 
 object CiCareSdkCall {
@@ -85,41 +88,68 @@ object CiCareSdkCall {
                      callerName: String? = "Green SM Driver",
                      callerAvatar: String? = "",
                      calleeId: String,
-                     calleeName: String? = "",
-                     calleeAvatar: String? = "Green SM Customer",
+                     calleeName: String? = "Green SM Customer",
+                     calleeAvatar: String? = "",
                      checkSum: String,
                      metaData: Map<String, String> = emptyMap(),
-                     tokenCall: String,
-                     server: String,
-                     isFromPhone: Boolean,
                      messageActionListener: MessageActionListener
                      ) {
-        val ctx = contextRef?.get()
-        if (ctx == null) return
 
-        MessageListenerHolder.listener = messageActionListener
+        var base64String = metaData["alert_data"] as? String ?: return
 
-
-        val meta: HashMap<String, String> = HashMap(metaData)
-        val intent = Intent(ctx, IncomingCallService::class.java).apply {
-            action = CiCareCallService.ACTION.INCOMING
-            putExtra("call_type", "incoming")
-            putExtra("caller_id", callerId)
-            putExtra("caller_name", callerName?.ifEmpty{ "Green SM Driver" } ?: "Green SM Driver" )
-            putExtra("callee_id", calleeId)
-            putExtra("callee_name", calleeName?.ifEmpty{ "Green SM Customer" } ?: "Green SM Customer")
-            putExtra("callee_avatar", calleeAvatar)
-            putExtra("caller_avatar", callerAvatar)
-            putExtra("meta_data", meta)
-            putExtra("checksum", checkSum)
-            putExtra("token", tokenCall)
-            putExtra("server", server)
-            putExtra("from_phone", isFromPhone)
+        // Hapus prefix "base64," kalau ada
+        val prefix = "base64,"
+        if (base64String.contains(prefix)) {
+            base64String = base64String.substringAfter(prefix)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            ctx.startForegroundService(intent)
-        else
-            ctx.startService(intent)
+
+        base64String = base64String.trim()
+
+        val remainder = base64String.length % 4
+        if (remainder > 0) {
+            base64String += "=".repeat(4 - remainder)
+        }
+
+        try {
+            val decodedBytes = Base64.decode(base64String, Base64.DEFAULT)
+            val decodedString = String(decodedBytes, Charsets.UTF_8)
+            val jsonObject = JSONObject(decodedString)
+
+            val server = jsonObject.getString("server") ?: return
+            val token = jsonObject.getString("token") ?: return
+            val isFromPhone = jsonObject.getBoolean("isFromPhone")
+
+            val ctx = contextRef?.get()
+            if (ctx == null) return
+
+            MessageListenerHolder.listener = messageActionListener
+
+
+            val meta: HashMap<String, String> = HashMap(metaData)
+            var caller = if(callerName == "" || callerName == null) { "Green SM Driver" } else { callerName }
+            var callee = if(calleeName == "" || calleeName == null) { "Green SM Customer" } else { calleeName }
+            val intent = Intent(ctx, IncomingCallService::class.java).apply {
+                action = CiCareCallService.ACTION.INCOMING
+                putExtra("call_type", "incoming")
+                putExtra("caller_id", callerId)
+                putExtra("caller_name", caller)
+                putExtra("callee_id", calleeId)
+                putExtra("callee_name", callee)
+                putExtra("callee_avatar", calleeAvatar)
+                putExtra("caller_avatar", callerAvatar)
+                putExtra("meta_data", meta)
+                putExtra("checksum", checkSum)
+                putExtra("token", token)
+                putExtra("server", server)
+                putExtra("from_phone", isFromPhone)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                ctx.startForegroundService(intent)
+            else
+                ctx.startService(intent)
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "❌ Failed to decode or parse JSON: ${e.message}")
+        }
     }
 
     fun makeCall(callerId: String,
@@ -132,14 +162,17 @@ object CiCareSdkCall {
                  metaData: Map<String, String> = emptyMap()) {
         val ctx = contextRef?.get()
         if (ctx == null) return
+
+        var caller = if(callerName == "" || callerName == null) { "Green SM Driver" } else { callerName }
+        var callee = if(calleeName == "" || calleeName == null) { "Green SM Customer" } else { calleeName }
         val intent = Intent(ctx, CiCareCallService::class.java).apply {
             action = CiCareCallService.ACTION.OUTGOING
             putExtra("call_type", "outgoing")
             putExtra("callee_id", calleeId)
-            putExtra("callee_name", calleeName?.ifEmpty{ "Green SM Customer" } ?: "Green SM Customer")
+            putExtra("callee_name", callee)
             putExtra("callee_avatar", calleeAvatar)
             putExtra("caller_id", callerId)
-            putExtra("caller_name", callerName?.ifEmpty{ "Green SM Driver" } ?: "Green SM Driver")
+            putExtra("caller_name", caller)
             putExtra("caller_avatar", callerAvatar)
             putExtra("checksum", checkSum)
             putExtra("meta_data", HashMap(metaData))

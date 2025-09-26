@@ -191,7 +191,7 @@ class IncomingCallService : Service(), CallStateListener {
     fun reject() {
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
-            this.callListener?.onCallStateChanged(CallState.ENDED)
+            this.callListener?.onCallStateChanged(CallState.END)
         }
         socketManager.send("REJECT", JSONObject().apply {})
         if (Build.VERSION.SDK_INT>= Build.VERSION_CODES.N)
@@ -233,7 +233,7 @@ class IncomingCallService : Service(), CallStateListener {
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     override fun onCallStateChanged(callState: CallState) {
-        if (callState == CallState.ENDED) {
+        if (callState == CallState.END) {
             if (!isConnected)
                 showMissedCallNotification()
             callListener?.onCallStateChanged(callState)

@@ -61,7 +61,7 @@ class SocketManager {
         }
 
         socket?.on("MISSED_CALL") {
-            callStateListener?.onCallStateChanged(CallState.ENDED)
+            callStateListener?.onCallStateChanged(CallState.END)
         }
 
         socket?.on("RINGING_OK") {
@@ -109,7 +109,7 @@ class SocketManager {
 
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
-            callStateListener?.onCallStateChanged(CallState.ENDED)
+            callStateListener?.onCallStateChanged(CallState.END)
             webRTCManager?.close()
             socket?.disconnect()
         }

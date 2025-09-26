@@ -47,9 +47,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val callerName = data["caller_name"] ?: "Unknown"
         val callerId = data["caller_id"] ?: ""
         val callerAvatar = data["caller_avatar"] ?: ""
-        val tokenAnswer = data["token"] ?: return
-        val fromPhone = data["from_phone"] ?: "false"
-        val server = data["server"] ?: return
+        val metadata = mutableMapOf<String, String>().apply {
+            this["alert_data"] = data["alert_data"] ?: ""
+        }
 
         CiCareSdkCall.init(this).showIncoming(
             callerId = callerId,
@@ -58,10 +58,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             calleeId = "",
             calleeName = "",
             calleeAvatar = "",
-            tokenCall = tokenAnswer,
-            server = server,
-            isFromPhone = fromPhone.toBoolean(),
             checkSum = "",
+            metaData = metadata,
             messageActionListener = {
                 Toast.makeText(this, "Hello Message", Toast.LENGTH_LONG).show()
             }
