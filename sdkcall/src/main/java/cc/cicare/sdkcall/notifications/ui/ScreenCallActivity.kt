@@ -67,7 +67,6 @@ import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
-import cc.cicare.sdkcall.libs.ApiClient
 import cc.cicare.sdkcall.libs.CallRepository
 import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.libs.CallResult
@@ -77,9 +76,7 @@ import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import coil.compose.AsyncImage
-import com.google.gson.JsonArray
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
@@ -215,7 +212,7 @@ class ScreenCallActivity :
                         service.answerCall(intent)
                     }
                     CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
-                        callService?.let { it ->
+                        callService?.let {
                             it.callState.value = "incoming"
                         }
                     }
