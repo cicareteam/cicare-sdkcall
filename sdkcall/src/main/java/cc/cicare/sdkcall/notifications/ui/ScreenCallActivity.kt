@@ -226,7 +226,7 @@ class ScreenCallActivity :
                                 callerName = intent.getStringExtra("caller_name") ?: "",
                                 callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
                                 calleeId = intent.getStringExtra("callee_id") ?: "",
-                                calleeName = intent.getStringExtra("callee_id") ?: "",
+                                calleeName = intent.getStringExtra("callee_name") ?: "",
                                 calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
                                 checksum = intent.getStringExtra("checksum") ?: "",
                             ),
@@ -637,7 +637,8 @@ fun CallScreen(
                     CallAvatar(avatarUrl)
                     Spacer(modifier = Modifier.height(35.dp))
 
-                    Text(text = metaData["call_name_title"] ?: callerName, style = MaterialTheme.typography.headlineSmall)
+                    Text(text = if (metaData["call_name_title"]?.isBlank() == true)
+                        callerName else metaData["call_name_title"] ?: callerName, style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(15.dp))
                     Text(
                         text = metaData[signalState] ?: signalState, // ->status network

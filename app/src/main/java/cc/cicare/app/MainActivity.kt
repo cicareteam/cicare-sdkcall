@@ -74,10 +74,10 @@ class MainActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 CiCareSdkCall.makeCall(
                                     "3",
-                                    "Anas",
+                                    "callerName",
                                     "https://avatar.iran.liara.run/public/boy",
                                     "4",
-                                    "",
+                                    "calleeName",
                                     "https://avatar.iran.liara.run/public/boy",
                                     "asdfasdfasdfsadfasdf",
                                     metaData
