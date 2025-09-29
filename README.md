@@ -141,10 +141,9 @@ override fun onMessageReceived(message: RemoteMessage) {
     val callerName = data["caller_name"] ?: "Unknown"
     val callerId = data["caller_id"] ?: ""
     val callerAvatar = data["caller_avatar"] ?: ""
-    val tokenCall = data["token"] ?: return
-    val fromPhone = data["from_phone"] ?: "false"
-    val server = data["server"] ?: return
-
+    val metadata = mutableMapOf<String, String>().apply {
+            this["alert_data"] = data["alert_data"] ?: ""
+        }
     CiCareSdkCall.init(this).showIncoming(
         callerId = callerId,
         callerName = callerName,
@@ -152,16 +151,16 @@ override fun onMessageReceived(message: RemoteMessage) {
         calleeId = "",
         calleeName = "",
         calleeAvatar = "",
-        tokenCall = tokenCall,
-        server = server,
-        isFromPhone = fromPhone.toBoolean(),
         checkSum = "",
+        metaData = metadata,
         messageActionListener = {
             Toast.makeText(this, "Hello Message", Toast.LENGTH_LONG).show()
         }
     )
 }
 ```
+
+**alert_data in metaData is required
 
 ### Setting Custom Ringtone
 ```kotlin
