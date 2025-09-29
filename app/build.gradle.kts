@@ -64,7 +64,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     //implementation("com.github.cicareteam:cicare-sdkcall:1.2.0-rc.8")
-    //implementation(project(":sdkcall"))
+    implementation(project(":sdkcall"))
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
     testImplementation(libs.junit)
