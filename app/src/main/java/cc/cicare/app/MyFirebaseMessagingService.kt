@@ -1,7 +1,9 @@
 package cc.cicare.app
 
+import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import androidx.core.content.edit
 import cc.cicare.sdkcall.CiCareSdkCall
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -14,13 +16,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     //@Inject lateinit var callServiceRepository: CallServiceRepository
 
     override fun onNewToken(token: String) {
-        Log.i("SDK Call", token)
         CoroutineScope(Dispatchers.IO).launch {
-            val response = ApiClient.api.saveToken(TokenSaveRequest(2, token))
-            if (response.isSuccessful) {
-                Log.d("SDK Call", "Token saved")
-            } else {
-                Log.e("SDK Call", "Token failed: ${response.code()}")
+            val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            Log.i("user", "new token")
+            prefs.edit {
+                putString("fcm", token)
             }
         }
 //

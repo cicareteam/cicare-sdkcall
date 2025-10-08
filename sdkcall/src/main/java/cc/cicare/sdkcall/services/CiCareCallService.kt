@@ -293,6 +293,7 @@ class CiCareCallService:
         val token = intent.getStringExtra("token") ?: ""
         socketManager.connect(server, token)
         socketManager.send("ANSWER_CALL", JSONObject())
+        Log.i("SDK CALL", "answer call service " + server + " " + token)
     }
 
     suspend fun ackAnswer() {
