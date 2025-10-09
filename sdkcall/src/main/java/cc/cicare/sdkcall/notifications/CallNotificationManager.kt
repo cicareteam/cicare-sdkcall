@@ -57,12 +57,15 @@ object CallNotificationManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "CALL_CHANNEL_NAME",
+                channelId,
                 important
             )
             channel.setSound(ringtoneUrl, AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+            channel.enableVibration(true)
+            channel.vibrationPattern = longArrayOf(0, 500, 1000, 500, 1000)
             notificationManager.createNotificationChannel(channel)
         }
         return notificationManager
@@ -91,8 +94,9 @@ object CallNotificationManager {
             .setFullScreenIntent(screenCallIntent(context, intent, "INCOMING"), true)
             .setSmallIcon(CiCareCallService.INCOMING_CALL_ICON)
             .setSound(ringtoneUrl, AudioManager.STREAM_RING)
+            .setVibrate(longArrayOf(0, 500, 1000, 500, 1000))
             .addPerson(callerProfile)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
             .setAutoCancel(false)
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(

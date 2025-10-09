@@ -157,7 +157,7 @@ class IncomingCallService : Service(), CallStateListener {
             CallNotificationManager.provideNotificationManagerIncoming(
                 this, "CALL_INCOMING_CHANNEL_ID",
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                    NotificationManager.IMPORTANCE_HIGH else Notification.PRIORITY_LOW)
+                    NotificationManager.IMPORTANCE_MAX else Notification.PRIORITY_MAX)
             val notification = CallNotificationManager.incomingCallNotificationBuilder(
                 this,
                 intent,

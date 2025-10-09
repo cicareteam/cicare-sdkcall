@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import cc.cicare.sdkcall.event.CallEventListener
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
@@ -118,6 +119,9 @@ class ScreenCallActivity :
 
     private val listener: MessageActionListener?
         get() = MessageListenerHolder.listener
+
+    private val callEventListener: CallEventListener?
+        get() = MessageListenerHolder.callEventListener
 
     private var metaData: HashMap<*, *> = hashMapOf(
         "call_title" to "Free Call",
@@ -246,6 +250,7 @@ class ScreenCallActivity :
     private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
         if (!checkInternetConnection()) {
             Log.i("SDK CALL", "NO INTERNET")
+            callEventListener?.onError(100, "No internet connection")
             onNetworkError(
                 state = (metaData["call_failed_no_connection"]
                     ?: "No internet connection") as String, systemError = false
@@ -275,13 +280,23 @@ class ScreenCallActivity :
                         if (result.error.code == 400) {
                             val c = JSONObject(result.error.message)
                             if (c.get("code") == 3) {
+                                callEventListener?.onError(c.get("code") as Int,
+                                    c.get("message") as String
+                                )
                                 this.onNetworkError(
                                     state = (metaData[c.get("message")]
                                         ?: c.get("message")) as String,
                                     systemError = false
                                 )
+                            } else {
+                                callEventListener?.onError(500,
+                                    "Call failed due to system error"
+                                )
                             }
                         } else {
+                            callEventListener?.onError(result.error.code,
+                                result.error.message
+                            )
                             this.onNetworkError(
                                 state = (metaData["call_failed_api"]
                                     ?: "Call failed due to system error") as String,
@@ -292,6 +307,9 @@ class ScreenCallActivity :
                 }
             } catch (e: Exception) {
                 Log.e("SDK CALL", "Error: ${e.message}")
+                callEventListener?.onError(500,
+                    "Call failed due to system error"
+                )
                 this.onNetworkError(
                     state = (metaData["call_failed_api"]
                         ?: "Call failed due to system error") as String,
@@ -512,6 +530,7 @@ class ScreenCallActivity :
     }
 
     override fun onCallStateChanged(callState: CallState) {
+        callEventListener?.onCallStateChange(callState)
         //Log.i("HELLO", "RUN TIMER")
         //callStatusRaw = callState.toString().lowercase()
         /*when (callState) {

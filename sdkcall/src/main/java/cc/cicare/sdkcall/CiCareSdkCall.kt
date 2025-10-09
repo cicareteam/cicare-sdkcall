@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import cc.cicare.sdkcall.event.CallEventListener
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
 import cc.cicare.sdkcall.libs.ApiClient
@@ -36,6 +37,10 @@ object CiCareSdkCall {
 
     fun setRingTone(ringTone: Uri) {
         CallNotificationManager.ringtoneUrl = ringTone
+    }
+
+    fun setEventListener(eventListener: CallEventListener) {
+        MessageListenerHolder.callEventListener = eventListener
     }
 
     private val requiredPermissions = arrayOf(
