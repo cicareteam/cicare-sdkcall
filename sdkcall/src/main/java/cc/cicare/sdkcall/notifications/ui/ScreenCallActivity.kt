@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -16,10 +17,14 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -81,6 +87,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
+import kotlin.coroutines.resume
 
 data class CallInfo (
     val callerId: String,
@@ -408,21 +415,103 @@ class ScreenCallActivity :
 //        audioManager.requestAudioFocus(focusRequest)
 //    }
 
+    private val requiredPermissions = arrayOf(
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.READ_PHONE_STATE,
+    )
+
+    @RequiresApi(Build.VERSION_CODES.P)
+    private val requiredPermissions28 = arrayOf(
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.READ_PHONE_STATE,
+    )
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private val requiredPermissionsTirmaisu = arrayOf(
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.POST_NOTIFICATIONS,
+        android.Manifest.permission.READ_PHONE_STATE,
+    )
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private val requiredPermissionsUpsideDownCake = arrayOf(
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.POST_NOTIFICATIONS,
+        android.Manifest.permission.READ_PHONE_STATE,
+        android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
+        android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
+    )
+
+    private suspend fun checkAndRequestPermissionsSuspend(): Boolean {
+        return suspendCancellableCoroutine { continuation ->
+            val permissions = when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> requiredPermissionsTirmaisu
+                else -> requiredPermissionsUpsideDownCake
+            }
+
+            val notGranted = permissions.filter {
+                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }
+
+            if (notGranted.isEmpty()) {
+                continuation.resume(true)
+                return@suspendCancellableCoroutine
+            }
+
+            val launcher = registerForActivityResult(
+                ActivityResultContracts.RequestMultiplePermissions()
+            ) { result ->
+                val allGranted = result.values.all { it }
+                continuation.resume(allGranted)
+            }
+
+            launcher.launch(notGranted.toTypedArray())
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
+
         val context = this
+        val myIntent = intent
 //        requestAudioFocus()
 
         when(intent?.action) {
             CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
-                val intent = Intent(context, CiCareCallService::class.java).apply {
-                    action = CiCareCallService.ACTION.INCOMING
+
+                val granted = checkAndRequestPermissionsSuspend()
+                if (granted) {
+                    val intent = Intent(context, CiCareCallService::class.java).apply {
+                        action = CiCareCallService.ACTION.INCOMING
+                    }
+                    startService(intent)
+                    callService?.let {
+                        it.callState.value = "incoming"
+                    }
                 }
-                startService(intent)
-                callService?.let {
-                    it.callState.value = "incoming"
+            }
+            CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
+                val granted = checkAndRequestPermissionsSuspend()
+                if (granted) {
+                    val intent = Intent(context, CiCareCallService::class.java).apply {
+                        action = CiCareCallService.ACTION.OUTGOING
+                        putExtras(myIntent)
+                    }
+                    startService(intent)
+                } else {
+                    finish()
                 }
             }
             CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }

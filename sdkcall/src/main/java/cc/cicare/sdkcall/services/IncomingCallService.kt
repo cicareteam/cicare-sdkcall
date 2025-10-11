@@ -154,18 +154,18 @@ class IncomingCallService : Service(), CallStateListener {
         intent?.let {
             val callerName = intent.getStringExtra("caller_name") ?: "unknown"
             val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-            CallNotificationManager.provideNotificationManagerIncoming(
-                this, "CALL_INCOMING_CHANNEL_ID",
+            val channel = CallNotificationManager.provideNotificationManagerIncoming(
+                this, "CICARE_SDK_INCOMING",
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                    NotificationManager.IMPORTANCE_MAX else Notification.PRIORITY_MAX)
+                    NotificationManager.IMPORTANCE_HIGH else Notification.PRIORITY_HIGH)
             val notification = CallNotificationManager.incomingCallNotificationBuilder(
                 this,
                 intent,
-                "CALL_INCOMING_CHANNEL_ID",
+                "CICARE_SDK_INCOMING",
                 callerName,
                 callerAvatar
             )
-            startForeground(101, notification.build())
+            startForeground(1, notification.build())
         }
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {

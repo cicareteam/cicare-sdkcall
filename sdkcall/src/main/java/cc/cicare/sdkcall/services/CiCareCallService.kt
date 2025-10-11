@@ -338,11 +338,11 @@ class CiCareCallService:
         )
 
         startForeground(101, notification.build())
-        startActivity(Intent(this, ScreenCallActivity::class.java).apply {
+        /*startActivity(Intent(this, ScreenCallActivity::class.java).apply {
             action = ACTION.OUTGOING
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtras(intent)
-        })
+        })*/
     }
 
     fun cancelCall() {

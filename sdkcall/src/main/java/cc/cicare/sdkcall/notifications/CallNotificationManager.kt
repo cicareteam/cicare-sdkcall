@@ -63,7 +63,7 @@ object CallNotificationManager {
             channel.setSound(ringtoneUrl, AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-            channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+            channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             channel.enableVibration(true)
             channel.vibrationPattern = longArrayOf(0, 500, 1000, 500, 1000)
             notificationManager.createNotificationChannel(channel)
@@ -98,6 +98,8 @@ object CallNotificationManager {
             .addPerson(callerProfile)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setStyle(NotificationCompat.CallStyle.forIncomingCall(
                 callerProfile,

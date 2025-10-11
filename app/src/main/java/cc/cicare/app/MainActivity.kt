@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
                         ContentView(
                             onLoggedIn = { ->
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    CiCareSdkCall.init(context).checkAndRequestPermissions(context)
+                                //    CiCareSdkCall.init(context).checkAndRequestPermissions(context)
                                 }
                         }
                         )
@@ -366,7 +366,7 @@ suspend fun fetchUsers(currentUserId: Int): List<User> = withContext(Dispatchers
     }
 }
 
-fun makeCall(currentUserId: Int, username: String, user: User) {
+fun makeCall( currentUserId: Int, username: String, user: User) {
     Log.i("SDK Call", "makeCall")
     CiCareSdkCall.makeCall(
         callerId = currentUserId.toString(),
