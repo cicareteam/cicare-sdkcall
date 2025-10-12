@@ -445,33 +445,31 @@ class ScreenCallActivity :
         android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
     )
 
-    private suspend fun checkAndRequestPermissionsSuspend(): Boolean {
-        return suspendCancellableCoroutine { continuation ->
-            val permissions = when {
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> requiredPermissionsTirmaisu
-                else -> requiredPermissionsUpsideDownCake
-            }
-
-            val notGranted = permissions.filter {
-                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            }
-
-            if (notGranted.isEmpty()) {
-                continuation.resume(true)
-                return@suspendCancellableCoroutine
-            }
-
-            val launcher = registerForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions()
-            ) { result ->
-                val allGranted = result.values.all { it }
-                continuation.resume(allGranted)
-            }
-
-            launcher.launch(notGranted.toTypedArray())
+    private fun checkAndRequestPermissions(onResult: (Boolean) -> Unit) {
+        val permissions = when {
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> requiredPermissionsTirmaisu
+            else -> requiredPermissionsUpsideDownCake
         }
+
+        val notGranted = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (notGranted.isEmpty()) {
+            onResult(true)
+            return
+        }
+
+        val launcher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { result ->
+            val allGranted = result.values.all { it }
+            onResult(allGranted)
+        }
+
+        launcher.launch(notGranted.toTypedArray())
     }
 
     @Suppress("DEPRECATION")
@@ -491,27 +489,29 @@ class ScreenCallActivity :
         when(intent?.action) {
             CiCareCallService.ACTION.INCOMING -> lifecycleScope.launch {
 
-                val granted = checkAndRequestPermissionsSuspend()
-                if (granted) {
-                    val intent = Intent(context, CiCareCallService::class.java).apply {
-                        action = CiCareCallService.ACTION.INCOMING
-                    }
-                    startService(intent)
-                    callService?.let {
-                        it.callState.value = "incoming"
+                checkAndRequestPermissions { granted ->
+                    if (granted) {
+                        val intent = Intent(context, CiCareCallService::class.java).apply {
+                            action = CiCareCallService.ACTION.INCOMING
+                        }
+                        startService(intent)
+                        callService?.let {
+                            it.callState.value = "incoming"
+                        }
                     }
                 }
             }
             CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
-                val granted = checkAndRequestPermissionsSuspend()
-                if (granted) {
-                    val intent = Intent(context, CiCareCallService::class.java).apply {
-                        action = CiCareCallService.ACTION.OUTGOING
-                        putExtras(myIntent)
+                checkAndRequestPermissions { granted ->
+                    if (granted) {
+                        val intent = Intent(context, CiCareCallService::class.java).apply {
+                            action = CiCareCallService.ACTION.OUTGOING
+                            putExtras(myIntent)
+                        }
+                        startService(intent)
+                    } else {
+                        finish()
                     }
-                    startService(intent)
-                } else {
-                    finish()
                 }
             }
             CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
