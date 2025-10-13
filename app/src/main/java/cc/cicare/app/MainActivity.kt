@@ -1,5 +1,6 @@
 package cc.cicare.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
@@ -55,6 +56,8 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import androidx.core.content.edit
+import cc.cicare.sdkcall.event.CallEventListener
+import cc.cicare.sdkcall.event.CallState
 
 // ------------ Data Models ------------
 data class User(
@@ -63,16 +66,17 @@ data class User(
     val avatar: String
 )
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), CallEventListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         CiCareSdkCall.init(this)
+        CiCareSdkCall.setEventListener(this)
 
 
         CiCareSdkCall.setAPI(
-            "https://sip-gw.c-icare.cc:8443",
+            "https://gsm-sdk.c-icare.cc:8443",
             "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
         enableEdgeToEdge()
 
@@ -83,6 +87,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.fillMaxHeight().padding(innerPadding)) {
                         ContentView(
+                            activity = this@MainActivity,
                             onLoggedIn = { ->
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 //    CiCareSdkCall.init(context).checkAndRequestPermissions(context)
@@ -94,10 +99,19 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onCallStateChange(callState: CallState) {
+        Log.i("SDK Call", "onCallStateChange: $callState")
+    }
+
+    override fun onError(code: Int, message: String) {
+        Log.e("SDKCALL ERROR", "onError: $code $message")
+    }
 }
 // ------------ Main ContentView ------------
 @Composable
 fun ContentView(
+    activity: ComponentActivity,
     onLoggedIn: () -> Unit
 ) {
     val context = LocalContext.current
@@ -141,6 +155,7 @@ fun ContentView(
         CallView(
             currentUserId = currentUserId,
             username = username,
+            activity = activity,
             onLogout = {
                 FirebaseInstallations.getInstance().delete()
                 prefs.edit { clear() }
@@ -240,6 +255,7 @@ fun LoginView(
 @Composable
 fun CallView(
     currentUserId: Int,
+    activity: ComponentActivity,
     username: String,
     onLogout: () -> Unit
 ) {
@@ -282,7 +298,7 @@ fun CallView(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(user.name, modifier = Modifier.weight(1f))
-                        Button(onClick = { makeCall(currentUserId, username, user) }) {
+                        Button(onClick = { makeCall(activity, currentUserId, username, user) }) {
                             Text("Call")
                         }
                     }
@@ -366,9 +382,10 @@ suspend fun fetchUsers(currentUserId: Int): List<User> = withContext(Dispatchers
     }
 }
 
-fun makeCall( currentUserId: Int, username: String, user: User) {
+fun makeCall( activity: ComponentActivity, currentUserId: Int, username: String, user: User) {
     Log.i("SDK Call", "makeCall")
     CiCareSdkCall.makeCall(
+        activity = activity,
         callerId = currentUserId.toString(),
         callerName = username,
         callerAvatar = "https://avatar.iran.liara.run/public/boy",

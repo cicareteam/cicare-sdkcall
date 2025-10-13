@@ -113,6 +113,7 @@ class ScreenCallActivity :
     private var eventListener: CallStateListener = this
     private var tickerListener: TimeTickerListener = this
     private var connectionLister: ConnectionStateListener = this
+    private var permissionGranted: Boolean = false
     //private var callDurationJob: Job? = null
     //private var callSeconds = 0
 
@@ -228,17 +229,21 @@ class ScreenCallActivity :
                         }
                     }
                     CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
-                        requestOutgoingCall(
-                            callInfo = CallInfo(
-                                callerId = intent.getStringExtra("caller_id") ?: "",
-                                callerName = intent.getStringExtra("caller_name") ?: "",
-                                callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
-                                calleeId = intent.getStringExtra("callee_id") ?: "",
-                                calleeName = intent.getStringExtra("callee_name") ?: "",
-                                calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
-                                checksum = intent.getStringExtra("checksum") ?: "",
-                            ),
-                            callService = service)
+                        if (permissionGranted) {
+                            Log.i("SDK CALL", "OUTGOING GRANTED")
+                            requestOutgoingCall(
+                                callInfo = CallInfo(
+                                    callerId = intent.getStringExtra("caller_id") ?: "",
+                                    callerName = intent.getStringExtra("caller_name") ?: "",
+                                    callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
+                                    calleeId = intent.getStringExtra("callee_id") ?: "",
+                                    calleeName = intent.getStringExtra("callee_name") ?: "",
+                                    calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
+                                    checksum = intent.getStringExtra("checksum") ?: "",
+                                ),
+                                callService = service
+                            )
+                        }
                     }
 
                     else -> {
@@ -301,8 +306,9 @@ class ScreenCallActivity :
                                 )
                             }
                         } else {
+                            val c = JSONObject(result.error.message)
                             callEventListener?.onError(result.error.code,
-                                result.error.message
+                                c.get("message") as String
                             )
                             this.onNetworkError(
                                 state = (metaData["call_failed_api"]
@@ -353,8 +359,12 @@ class ScreenCallActivity :
     override fun onStart() {
         super.onStart()
 
-        Intent(this, CiCareCallService::class.java).also {
-            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+        if (isForegroundMicPermissionGranted()) {
+            Intent(this, CiCareCallService::class.java).also {
+                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+            }
+        } else {
+            callEventListener?.onError(101, "Mic permission not granted")
         }
         Intent(this, IncomingCallService::class.java).also {
             bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
@@ -445,6 +455,24 @@ class ScreenCallActivity :
         android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
     )
 
+    fun isForegroundMicPermissionGranted(): Boolean {
+        val recordAudioGranted = ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val fgMicGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true // Di bawah Android 14 belum ada permission ini
+        }
+
+        return recordAudioGranted && fgMicGranted
+    }
+
     private fun checkAndRequestPermissions(onResult: (Boolean) -> Unit) {
         val permissions = when {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
@@ -466,6 +494,7 @@ class ScreenCallActivity :
             ActivityResultContracts.RequestMultiplePermissions()
         ) { result ->
             val allGranted = result.values.all { it }
+            permissionGranted = allGranted
             onResult(allGranted)
         }
 
@@ -475,6 +504,10 @@ class ScreenCallActivity :
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        checkAndRequestPermissions {
+            permissionGranted = it
+        }
 
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -498,10 +531,13 @@ class ScreenCallActivity :
                         callService?.let {
                             it.callState.value = "incoming"
                         }
+                    } else {
+                        callEventListener?.onError(101, "Permission denied")
                     }
                 }
             }
             CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
+
                 checkAndRequestPermissions { granted ->
                     if (granted) {
                         val intent = Intent(context, CiCareCallService::class.java).apply {
@@ -509,7 +545,24 @@ class ScreenCallActivity :
                             putExtras(myIntent)
                         }
                         startService(intent)
+                        lifecycleScope.launch {
+                            callService?.let {
+                                requestOutgoingCall(
+                                    callInfo = CallInfo(
+                                        callerId = intent.getStringExtra("caller_id") ?: "",
+                                        callerName = intent.getStringExtra("caller_name") ?: "",
+                                        callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
+                                        calleeId = intent.getStringExtra("callee_id") ?: "",
+                                        calleeName = intent.getStringExtra("callee_name") ?: "",
+                                        calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
+                                        checksum = intent.getStringExtra("checksum") ?: "",
+                                    ),
+                                    callService = it
+                                )
+                            }
+                        }
                     } else {
+                        callEventListener?.onError(101, "Permission denied")
                         finish()
                     }
                 }

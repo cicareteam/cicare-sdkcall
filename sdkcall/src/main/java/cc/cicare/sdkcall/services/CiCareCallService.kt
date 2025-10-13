@@ -356,7 +356,7 @@ class CiCareCallService:
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     fun outgoingCallStateUpdate(callState: String) {
-        if (outgoingIntent == null) return
+
         val notificationManager = CallNotificationManager.provideNotificationManagerCompat(this,
             "CALL_OUTGOING_CHANNEL_ID",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

@@ -8,9 +8,10 @@ import android.net.Uri
 import android.os.Build
 import android.util.Base64
 import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import cc.cicare.sdkcall.event.CallEventListener
@@ -21,10 +22,13 @@ import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import kotlin.coroutines.resume
 
 object CiCareSdkCall {
 
@@ -78,30 +82,62 @@ object CiCareSdkCall {
         android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
     )
 
-    suspend fun AppCompatActivity.checkAndRequestPermissionsSuspend(): Boolean {
+    fun checkAndRequestPermissions(activity: Activity): Boolean {
+        val ctx = contextRef?.get() ?: return false
+
+        val permissions = when {
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> requiredPermissionsTirmaisu
+            else -> requiredPermissionsUpsideDownCake
+        }
+
+        val notGranted = permissions.filter {
+            ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        return if (notGranted.isEmpty()) {
+            // Semua permission sudah diberikan
+            true
+        } else {
+            // Masih ada yang belum diberikan → request ke user
+            ActivityCompat.requestPermissions(activity, notGranted.toTypedArray(), 1001)
+            false
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun isForegroundMicPermissionGranted(activity: ComponentActivity): Boolean {
+        val ctx = contextRef?.get() ?: return false
+
+        val permissions = when {
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> requiredPermissionsTirmaisu
+            else -> requiredPermissionsUpsideDownCake
+        }
+
+        val notGranted = permissions.filter {
+            ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (notGranted.isEmpty()) return true
+
         return suspendCancellableCoroutine { continuation ->
-            val permissions = when {
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> requiredPermissionsTirmaisu
-                else -> requiredPermissionsUpsideDownCake
+            val requestCode = 1001
+
+            val callback = object : ActivityResultCallback<Map<String, Boolean>> {
+                override fun onActivityResult(result: Map<String, Boolean>) {
+                    val allGranted = result.values.all { it }
+                    continuation.resume(allGranted) {}
+                }
             }
 
-            val notGranted = permissions.filter {
-                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            }
-
-            if (notGranted.isEmpty()) {
-                continuation.resume(true)
-                return@suspendCancellableCoroutine
-            }
-
-            val launcher = registerForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions()
-            ) { result ->
-                val allGranted = result.values.all { it }
-                continuation.resume(allGranted)
-            }
+            val launcher = activity.activityResultRegistry.register(
+                "permission_request_${System.currentTimeMillis()}",
+                ActivityResultContracts.RequestMultiplePermissions(),
+                callback
+            )
 
             launcher.launch(notGranted.toTypedArray())
         }
@@ -175,7 +211,9 @@ object CiCareSdkCall {
         }
     }
 
-    fun makeCall(callerId: String,
+    fun makeCall(
+                 activity: ComponentActivity,
+                 callerId: String,
                  callerName: String? = "Green SM Driver",
                  callerAvatar: String? = "",
                  calleeId: String,
@@ -185,24 +223,36 @@ object CiCareSdkCall {
                  metaData: Map<String, String> = emptyMap()) {
         val ctx = contextRef?.get()
         if (ctx == null) return
-
-        var caller = if(callerName == "" || callerName == null) { "Green SM Driver" } else { callerName }
-        var callee = if(calleeName == "" || calleeName == null) { "Green SM Customer" } else { calleeName }
-        val intent = Intent(ctx, ScreenCallActivity::class.java).apply {
-            action = CiCareCallService.ACTION.OUTGOING
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            putExtra("call_type", "outgoing")
-            putExtra("callee_id", calleeId)
-            putExtra("callee_name", callee)
-            putExtra("callee_avatar", calleeAvatar)
-            putExtra("caller_id", callerId)
-            putExtra("caller_name", caller)
-            putExtra("caller_avatar", callerAvatar)
-            putExtra("checksum", checkSum)
-            putExtra("meta_data", HashMap(metaData))
+        CoroutineScope(Dispatchers.Main).launch {
+            if (isForegroundMicPermissionGranted(activity)) {
+                var caller = if (callerName == "" || callerName == null) {
+                    "Green SM Driver"
+                } else {
+                    callerName
+                }
+                var callee = if (calleeName == "" || calleeName == null) {
+                    "Green SM Customer"
+                } else {
+                    calleeName
+                }
+                val intent = Intent(ctx, ScreenCallActivity::class.java).apply {
+                    action = CiCareCallService.ACTION.OUTGOING
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    putExtra("call_type", "outgoing")
+                    putExtra("callee_id", calleeId)
+                    putExtra("callee_name", callee)
+                    putExtra("callee_avatar", calleeAvatar)
+                    putExtra("caller_id", callerId)
+                    putExtra("caller_name", caller)
+                    putExtra("caller_avatar", callerAvatar)
+                    putExtra("checksum", checkSum)
+                    putExtra("meta_data", HashMap(metaData))
+                }
+                ctx.startActivity(intent)
+            } else {
+                MessageListenerHolder.callEventListener?.onError(101, "Permisssion not granted")
+            }
         }
-
-        ctx.startActivity(intent)
 
     }
 }
