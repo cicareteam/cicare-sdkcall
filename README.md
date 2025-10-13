@@ -120,6 +120,7 @@ fun makeOutgoingCall() {
     )
 
     CiCareSdkCall.makeCall(
+        activity = ComponentActivity,
         callerId = "user123",
         callerName = "John Doe",
         callerAvatar = "https://example.com/avatar/john.jpg",
@@ -173,7 +174,35 @@ fun setCustomRingtone() {
 }
 ```
 
+## Call Event Listener
+
+If you want to tracking call event or error event you can do this
+
+```kotlin
+class MainActivity : ComponentActivity(), CallEventListener {
+   override fun onCreate(savedInstanceState: Bundle?) {
+
+      CiCareSdkCall.setEventListener(this)
+      
+   }
+
+   override fun onCallStateChange(callState: CallState) {
+        Log.i("SDK Call", "onCallStateChange: $callState")
+    }
+
+    override fun onError(code: Int, message: String) {
+        Log.e("SDKCALL ERROR", "onError: $code $message")
+    }
+}
+```
+
 ## Troubleshooting
+
+### Error Code
+101: Permission not granted
+401: Unauthorized -> check the api token
+3: Call not found
+500: Server gateway error
 
 ### Common Issues
 
