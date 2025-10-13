@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity(), CallEventListener {
 
 
         CiCareSdkCall.setAPI(
-            "https://gsm-sdk.c-icare.cc:8443",
+            "https://sip-gw.c-icare.cc:8443",
             "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
         enableEdgeToEdge()
 
