@@ -22,6 +22,21 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             prefs.edit {
                 putString("fcm", token)
             }
+            val userId = prefs.getInt("currentUserId", 0)
+            if (userId>0) {
+                CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val response = ApiClient.api.saveToken(TokenSaveRequest(userId, token))
+                    if (response.isSuccessful) {
+                        Log.d("SDK Call", "Token saved")
+                    } else {
+                        Log.e("SDK Call", "Token failed: ${response.code()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e("SDK Call", "Error saving token: ${e.message}")
+                }
+            }
+            }
         }
 //
 //        if (userId != null && userId > 0) {

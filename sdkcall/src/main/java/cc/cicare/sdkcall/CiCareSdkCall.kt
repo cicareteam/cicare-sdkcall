@@ -53,7 +53,7 @@ object CiCareSdkCall {
     }
 
     private val requiredPermissions = arrayOf(
-        android.Manifest.permission.RECORD_AUDIO,
+        //android.Manifest.permission.RECORD_AUDIO,
         android.Manifest.permission.READ_PHONE_STATE,
     )
 

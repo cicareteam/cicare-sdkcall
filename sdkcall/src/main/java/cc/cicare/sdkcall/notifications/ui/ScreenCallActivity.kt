@@ -358,8 +358,10 @@ class ScreenCallActivity :
 
     override fun onStart() {
         super.onStart()
-        Intent(this, CiCareCallService::class.java).also {
-            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+        if (isForegroundMicPermissionGranted()) {
+            Intent(this, CiCareCallService::class.java).also {
+                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+            }
         }
 
         Intent(this, IncomingCallService::class.java).also {
@@ -367,9 +369,17 @@ class ScreenCallActivity :
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        Intent(this, CiCareCallService::class.java).also {
+            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         if (bound) {
+            callService?.forceStop()
             unbindService(callServiceConnection)
             bound = false
         }
@@ -422,30 +432,30 @@ class ScreenCallActivity :
 
     private val requiredPermissions = arrayOf(
         android.Manifest.permission.RECORD_AUDIO,
-        android.Manifest.permission.READ_PHONE_STATE,
+        //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.P)
     private val requiredPermissions28 = arrayOf(
         android.Manifest.permission.RECORD_AUDIO,
         android.Manifest.permission.FOREGROUND_SERVICE,
-        android.Manifest.permission.READ_PHONE_STATE,
+        //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private val requiredPermissionsTirmaisu = arrayOf(
         android.Manifest.permission.RECORD_AUDIO,
         android.Manifest.permission.FOREGROUND_SERVICE,
-        android.Manifest.permission.POST_NOTIFICATIONS,
-        android.Manifest.permission.READ_PHONE_STATE,
+        //android.Manifest.permission.POST_NOTIFICATIONS,
+        //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private val requiredPermissionsUpsideDownCake = arrayOf(
         android.Manifest.permission.RECORD_AUDIO,
         android.Manifest.permission.FOREGROUND_SERVICE,
-        android.Manifest.permission.POST_NOTIFICATIONS,
-        android.Manifest.permission.READ_PHONE_STATE,
+        //android.Manifest.permission.POST_NOTIFICATIONS,
+        //android.Manifest.permission.READ_PHONE_STATE,
         android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
         android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
     )
@@ -462,7 +472,7 @@ class ScreenCallActivity :
                 android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
             ) == PackageManager.PERMISSION_GRANTED
         } else {
-            true // Di bawah Android 14 belum ada permission ini
+            true
         }
 
         return recordAudioGranted && fgMicGranted
@@ -703,6 +713,7 @@ class ScreenCallActivity :
     }
 
     private fun answer() {
+        incomingService?.forceStop()
         callService?.answerCall(intent, true)
     }
 
