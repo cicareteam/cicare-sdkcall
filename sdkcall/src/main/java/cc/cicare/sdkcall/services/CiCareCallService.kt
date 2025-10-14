@@ -5,10 +5,12 @@ import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -16,6 +18,7 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import cc.cicare.sdkcall.R
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
@@ -150,6 +153,35 @@ class CiCareCallService:
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             )
         }
+    }
+
+    private var ringbackJob: Job? = null
+    private var ringbackPlayer: MediaPlayer? = null
+
+    fun playRingback(context: Context) {
+        stopRingback() // pastikan tidak double
+        ringbackJob = CoroutineScope(Dispatchers.Main).launch {
+            while (isActive) {
+                ringbackPlayer = MediaPlayer.create(context, R.raw.tuut)
+                ringbackPlayer?.start()
+
+                // Tunggu sampai audio selesai main
+                delay(ringbackPlayer?.duration?.toLong() ?: 1000L)
+
+                // Hentikan player dan beri delay 3 detik sebelum ulang
+                ringbackPlayer?.release()
+                ringbackPlayer = null
+                delay(3000L) // delay antar "tuut"
+            }
+        }
+    }
+
+    fun stopRingback() {
+        ringbackJob?.cancel()
+        ringbackJob = null
+        ringbackPlayer?.stop()
+        ringbackPlayer?.release()
+        ringbackPlayer = null
     }
 
     fun startCallTimer() {
@@ -484,24 +516,37 @@ class CiCareCallService:
         }
 
         when(callState) {
-            CallState.CALLING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
-            CallState.ANSWERING -> serviceScope.launch { ackAnswer() }
-            CallState.RINGING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.CALLING -> {
+                playRingback(this)
+                outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            }
+            CallState.ANSWERING -> serviceScope.launch {
+                ackAnswer()
+            }
+            CallState.RINGING ->  {
+                outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+                playRingback(this)
+                Log.i("CALL", "RINGING")
+            }
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.BUSY -> {
+                stopRingback()
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 this.eventListener.onCallStateChanged(callState)
                 stopSelf()
             }
             CallState.REFUSED -> {
+                stopRingback()
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 this.eventListener.onCallStateChanged(callState)
                 stopSelf()
             }
             CallState.CONNECTED -> {
+                stopRingback()
                 intent?.let { onOngoingCall(it) }
             }
             CallState.END -> {
+                stopRingback()
                 stopTimer()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
                     stopForeground(STOP_FOREGROUND_REMOVE)

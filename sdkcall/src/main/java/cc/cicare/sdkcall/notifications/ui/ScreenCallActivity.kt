@@ -358,14 +358,10 @@ class ScreenCallActivity :
 
     override fun onStart() {
         super.onStart()
-
-        if (isForegroundMicPermissionGranted()) {
-            Intent(this, CiCareCallService::class.java).also {
-                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
-            }
-        } else {
-            callEventListener?.onError(101, "Mic permission not granted")
+        Intent(this, CiCareCallService::class.java).also {
+            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
         }
+
         Intent(this, IncomingCallService::class.java).also {
             bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
         }
@@ -389,7 +385,6 @@ class ScreenCallActivity :
         when(intent?.action) {
             CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
         }
-
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -495,6 +490,7 @@ class ScreenCallActivity :
         ) { result ->
             val allGranted = result.values.all { it }
             permissionGranted = allGranted
+
             onResult(allGranted)
         }
 
@@ -524,6 +520,7 @@ class ScreenCallActivity :
 
                 checkAndRequestPermissions { granted ->
                     if (granted) {
+                        Log.i("SDK CALL", "Granted")
                         val intent = Intent(context, CiCareCallService::class.java).apply {
                             action = CiCareCallService.ACTION.INCOMING
                         }

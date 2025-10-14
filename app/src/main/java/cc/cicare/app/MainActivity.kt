@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity(), CallEventListener {
                             activity = this@MainActivity,
                             onLoggedIn = { ->
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                //    CiCareSdkCall.init(context).checkAndRequestPermissions(context)
+                                    CiCareSdkCall.init(context).checkAndRequestPermissions(context)
                                 }
                         }
                         )

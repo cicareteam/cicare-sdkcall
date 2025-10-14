@@ -26,7 +26,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object CallNotificationManager {
 
-    var ringtoneUrl: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    var ringtoneUrl: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
     @Provides
     @Singleton
     fun provideNotificationManagerCompat(
@@ -62,7 +62,8 @@ object CallNotificationManager {
             )
             channel.setSound(ringtoneUrl, AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            channel.enableVibration(true)
             channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             channel.enableVibration(true)
             channel.vibrationPattern = longArrayOf(0, 500, 1000, 500, 1000)
@@ -93,7 +94,7 @@ object CallNotificationManager {
         return NotificationCompat.Builder(context, channelId)
             .setFullScreenIntent(screenCallIntent(context, intent, "INCOMING"), true)
             .setSmallIcon(CiCareCallService.INCOMING_CALL_ICON)
-            .setSound(ringtoneUrl, AudioManager.STREAM_RING)
+            .setSound(ringtoneUrl, AudioManager.STREAM_NOTIFICATION)
             .setVibrate(longArrayOf(0, 500, 1000, 500, 1000))
             .addPerson(callerProfile)
             .setPriority(NotificationCompat.PRIORITY_MAX)
