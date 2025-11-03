@@ -44,7 +44,11 @@ enum class CallState {
     /**
      * Call has refused either by remote, local, or due to disconnection.
      */
-    REFUSED
+    REFUSED,
+    /**
+     * Call is timout or no answer from callee
+     */
+    TIMEOUT
 }
 
 /**

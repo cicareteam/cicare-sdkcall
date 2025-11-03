@@ -19,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.CallStateListener
+import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.services.CiCareCallService.ACTION
@@ -51,6 +52,8 @@ class IncomingCallService : Service(), CallStateListener {
 
     private var isConnected: Boolean = false
 
+    public var callState: CallState? = null
+
     private val binder = LocalBinder()
 
     private lateinit var socketManager: SocketManager
@@ -59,7 +62,7 @@ class IncomingCallService : Service(), CallStateListener {
         fun getService(): IncomingCallService = this@IncomingCallService
     }
 
-    override fun onBind(p0: Intent?): IBinder? {
+    override fun onBind(p0: Intent?): IBinder {
         return binder
     }
 
@@ -90,20 +93,8 @@ class IncomingCallService : Service(), CallStateListener {
             ACTION.INCOMING -> {
                 callerName = intent.getStringExtra("caller_name") ?: "unknown"
                 callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-                if (isDeviceInCall()) {
-                    if (ActivityCompat.checkSelfPermission(
-                            this,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        showMissedCallNotification()
-                    }
-                    socketManager.send("BUSY", JSONObject().apply {
-                        put("caller_id", intent.getStringExtra("caller_id"))
-                    })
-                } else {
-                    onIncomingCall(intent)
-                }
+
+                onIncomingCall(intent)
             }
             ACTION.REJECT -> reject()
         }
@@ -113,6 +104,10 @@ class IncomingCallService : Service(), CallStateListener {
 
     fun setCallListener(listener: CallStateListener) {
         this.callListener = listener
+    }
+
+    fun setConnectionStateListener(listener: ConnectionStateListener) {
+        this.socketManager.setConnectionStateListener(listener)
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -154,7 +149,7 @@ class IncomingCallService : Service(), CallStateListener {
         intent?.let {
             val callerName = intent.getStringExtra("caller_name") ?: "unknown"
             val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-            val channel = CallNotificationManager.provideNotificationManagerIncoming(
+            CallNotificationManager.provideNotificationManagerIncoming(
                 this, "CICARE_SDK_INCOMING",
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
                     NotificationManager.IMPORTANCE_HIGH else Notification.PRIORITY_HIGH)
@@ -180,6 +175,7 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     fun forceStop() {
+        Log.i("SDK CALL", "INCOMING REMOVED")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -189,10 +185,10 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     fun reject() {
-        val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-        if (isForeground) {
+        //val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        //if (isForeground) {
             this.callListener?.onCallStateChanged(CallState.END)
-        }
+        //}
         socketManager.send("REJECT", JSONObject().apply {})
         if (Build.VERSION.SDK_INT>= Build.VERSION_CODES.N)
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -202,10 +198,24 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     private fun initReceive(server: String, token: String, isFromPhone: Boolean?) {
+        socketManager.setCallStateListener(this)
         socketManager.connect(server, token)
-        socketManager.send("RINGING_CALL", JSONObject().apply {})
+        if (isDeviceInCall()) {
+            socketManager.send("BUSY", JSONObject().apply {
+                put("caller_id", intent?.getStringExtra("caller_id"))
+            })
+            if (ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                showMissedCallNotification()
+            }
+        } else {
+            socketManager.send("RINGING_CALL", JSONObject().apply {})
+            this.isFromPhone = isFromPhone ?: false
+        }
 
-        this.isFromPhone = isFromPhone ?: false
     }
 
     private fun isDeviceInCall(): Boolean {
@@ -222,6 +232,7 @@ class IncomingCallService : Service(), CallStateListener {
             val isVoipCall = (audioManager.mode == AudioManager.MODE_IN_CALL ||
                     audioManager.mode == AudioManager.MODE_IN_COMMUNICATION)
 
+
             return isTelephonyCall || isVoipCall
         }
         return false
@@ -233,6 +244,8 @@ class IncomingCallService : Service(), CallStateListener {
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     override fun onCallStateChanged(callState: CallState) {
+        Log.i("SDK Call", "$callState")
+        this.callState = callState
         if (callState == CallState.END) {
             if (!isConnected)
                 showMissedCallNotification()

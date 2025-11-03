@@ -214,7 +214,6 @@ class ScreenCallActivity :
                     }
                 }
             }
-            Log.i("SDK CALL", "Bounding service")
             callService?.setCallEventListener(eventListener)
             callService?.setTickerListener(tickerListener)
             callService?.setConnectionStateListener(connectionLister)
@@ -339,6 +338,10 @@ class ScreenCallActivity :
             incomingService = (binder as IncomingCallService.LocalBinder).getService()
             inbound = true
             incomingService?.setCallListener(eventListener)
+            incomingService?.setConnectionStateListener(connectionLister)
+            if (incomingService?.callState == CallState.END) {
+                hangup()
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -637,7 +640,8 @@ class ScreenCallActivity :
                         if (callType == "incoming" && callStatusRaw != "connected") {
                             incomingService?.reject()
                         } else {
-                            if (callStatusRaw == "calling") {
+                            if (callStatusRaw == "calling" || callStatusRaw == "connecting"
+                                || callStatusRaw == "ringing") {
                                 callService?.cancelCall()
                             } else {
                                 hangup()
@@ -705,7 +709,14 @@ class ScreenCallActivity :
         // }
         // }
         // } else
-        if (callState == CallState.END || callState == CallState.REFUSED || callState == CallState.BUSY) {
+        if (callState == CallState.TIMEOUT || callState == CallState.END || callState == CallState.REFUSED || callState == CallState.BUSY) {
+
+            if (callState == CallState.TIMEOUT) {
+                viewModel.updateState(metaData["call_end"].toString())
+            } else {
+                viewModel.updateState(metaData["call_"+callState.name.lowercase()].toString())
+            }
+
             Handler(Looper.getMainLooper()).postDelayed({
                 finish()
             }, 2000) // 3000 ms = 3 detik
@@ -713,6 +724,7 @@ class ScreenCallActivity :
     }
 
     private fun answer() {
+        Log.i("SDK CALL", "ANSWERED")
         incomingService?.forceStop()
         callService?.answerCall(intent, true)
     }
@@ -732,6 +744,8 @@ class ScreenCallActivity :
     override fun onSignalStateChanged(state: String) {
         if (callService?.callState == MutableStateFlow("connected")) {
             connectionState = if (state == "connected") "" else state
+        } else {
+            connectionState = state
         }
     }
 
