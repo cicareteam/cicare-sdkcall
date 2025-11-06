@@ -85,6 +85,7 @@ class SocketManager {
         }
 
         socket?.on("MISSED_CALL") {
+            Log.i("SDK CALL", "MISSED")
             callStateListener?.onCallStateChanged(CallState.END)
         }
 
@@ -199,6 +200,7 @@ class SocketManager {
 
     private fun sendPing() {
         pingStartTime = System.currentTimeMillis()
+        Log.i("SDK CALL", "ping")
         socket?.emit("PING")
     }
 
