@@ -608,6 +608,7 @@ fun hangup() {
             }
 
             CallState.RINGING_OK -> {}
+            CallState.MISSED -> {}
         }
     }
 

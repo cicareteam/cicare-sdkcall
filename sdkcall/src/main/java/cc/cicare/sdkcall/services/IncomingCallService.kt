@@ -246,7 +246,7 @@ class IncomingCallService : Service(), CallStateListener {
     override fun onCallStateChanged(callState: CallState) {
         Log.i("SDK Call", "$callState")
         this.callState = callState
-        if (callState == CallState.END) {
+        if (callState == CallState.END || callState == CallState.MISSED) {
             if (!isConnected)
                 showMissedCallNotification()
             callListener?.onCallStateChanged(callState)

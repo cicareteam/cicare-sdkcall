@@ -614,7 +614,7 @@ class ScreenCallActivity :
                                         (callStatusRaw == "connected") formatElapsedTime(timeTicker)
                     else metaData["call_$callStatusRaw"] ?: callStatusRaw,
                     callStatusRaw = callStatusRaw,
-                    signalState = connectionState,
+                    signalState = if (connectionState == "connected") "" else connectionState,
                     avatarUrl = if (callType == "incoming") callerAvatar else calleeAvatar,
                     isMicMuted,
                     isSpeakerOn,
@@ -721,11 +721,14 @@ class ScreenCallActivity :
             Handler(Looper.getMainLooper()).postDelayed({
                 finish()
             }, 2000) // 3000 ms = 3 detik
+        } else if (callState == CallState.ANSWERING) {
+            incomingService?.forceStop()
+            viewModel.updateState(metaData["call_connecting"].toString())
         }
     }
 
     private fun answer() {
-        Log.i("SDK CALL", "ANSWERED")
+        Log.i("SDK CALL", "ANSWERED CALL")
         incomingService?.forceStop()
         callService?.answerCall(intent, true)
     }

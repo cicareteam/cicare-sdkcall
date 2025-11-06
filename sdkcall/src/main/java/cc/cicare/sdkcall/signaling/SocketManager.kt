@@ -86,7 +86,7 @@ class SocketManager {
 
         socket?.on("MISSED_CALL") {
             Log.i("SDK CALL", "MISSED")
-            callStateListener?.onCallStateChanged(CallState.END)
+            callStateListener?.onCallStateChanged(CallState.MISSED)
         }
 
         socket?.on("RINGING_OK") {
