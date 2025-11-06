@@ -17,6 +17,7 @@ class WebRTCManager(
 
     private var peerConnection: PeerConnection? = null
     private lateinit var eglBase: EglBase
+    private var eglReleased = false
     private lateinit var peerConnectionFactory: PeerConnectionFactory
     private lateinit var audioTrack: AudioTrack
 
@@ -27,6 +28,7 @@ class WebRTCManager(
     fun init() {
         setAudioOutputToSpeaker(false)
         eglBase = EglBase.create()
+        eglReleased = false
         val options = PeerConnectionFactory.InitializationOptions.builder(context)
             .createInitializationOptions()
         PeerConnectionFactory.initialize(options)
@@ -264,10 +266,12 @@ class WebRTCManager(
                 peerConnection?.dispose()
                 peerConnectionFactory.dispose()
             }
-            if (::eglBase.isInitialized)
+            if (::eglBase.isInitialized && !eglReleased) {
                 eglBase.release()
+                eglReleased = true
+            }
         } catch (e: Exception) {
-            e.printStackTrace()
+            //e.printStackTrace()
         } finally {
             peerConnection = null
         }
