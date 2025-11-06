@@ -670,6 +670,7 @@ class ScreenCallActivity :
         MessageListenerHolder.listener = null
         callService?.stopSelf()
         incomingService?.stopSelf()
+        callService?.cancelCall()
         super.onDestroy()
     }
 
@@ -831,9 +832,11 @@ fun CallScreen(
 
             //
             Row(
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                modifier = Modifier.fillMaxWidth()
-                    .padding(bottom = 15.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 RoundIconButton(
                     icon = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else {
@@ -856,15 +859,15 @@ fun CallScreen(
                     enabled = callStatusRaw.lowercase() == "connected"
                 )
 
-                if (callStatusRaw.lowercase() == "incoming") {
-                    RoundIconButton(
-                        icon = Icons.AutoMirrored.Outlined.Chat,
-                        label = metaData["call_btn_message"] ?: "Message",
-                        onClick = onMessageClick,
-                        backgroundColor = Color(0xFFE9F8F9),
-                        iconTint = Color(0xFF17666A),
-                    )
-                }
+//                if (callStatusRaw.lowercase() == "incoming") {
+//                    RoundIconButton(
+//                        icon = Icons.AutoMirrored.Outlined.Chat,
+//                        label = metaData["call_btn_message"] ?: "Message",
+//                        onClick = onMessageClick,
+//                        backgroundColor = Color(0xFFE9F8F9),
+//                        iconTint = Color(0xFF17666A),
+//                    )
+//                }
             }
             Row(
                 horizontalArrangement = Arrangement.Center,

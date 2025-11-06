@@ -93,6 +93,10 @@ class SocketManager {
             callStateListener?.onCallStateChanged(CallState.RINGING_OK)
         }
 
+        socket?.on("BUSY") {
+            callStateListener?.onCallStateChanged(CallState.BUSY)
+        }
+
         // Event when the callee accepts the call
         socket?.on("INIT_OK") { _ ->
             Log.i("SDK CALL", "INIT_OK")
