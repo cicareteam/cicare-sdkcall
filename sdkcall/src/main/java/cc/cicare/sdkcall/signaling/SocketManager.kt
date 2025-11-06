@@ -3,6 +3,7 @@ package cc.cicare.sdkcall.signaling
 import android.util.Log
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
+import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.rtc.WebRTCManager
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -10,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
 
 /**
@@ -23,11 +25,20 @@ import org.webrtc.SessionDescription
 class SocketManager {
     private var socket: Socket? = null
     private var callStateListener: CallStateListener? = null
+    private var connectionStateListener: ConnectionStateListener? = null
 
     private var webRTCManager: WebRTCManager? = null
 
+    private var connectStartTime: Long = 0
+    private var pingStartTime: Long = 0
+    private var latencyAverage: Double = 0.0
+
     fun setCallStateListener(callStateListener: CallStateListener) {
         this.callStateListener = callStateListener
+    }
+
+    fun setConnectionStateListener(connectionStateListener: ConnectionStateListener) {
+        this.connectionStateListener = connectionStateListener
     }
 
     fun setWebrtc(webRTCManager: WebRTCManager) {
@@ -50,7 +61,16 @@ class SocketManager {
         }
 
         socket = IO.socket(wssUrl, opts)
+        connectStartTime = System.currentTimeMillis()
         socket?.connect()
+        Log.i("SDK CALL", "CONNECTING")
+        socket?.on(Socket.EVENT_CONNECT) {
+            val elapsed = System.currentTimeMillis() - connectStartTime
+            if (elapsed > 1500) {
+                connectionStateListener?.onSignalStateChanged("weak")
+            }
+            startPingLoop()
+        }
 
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             val error = args.getOrNull(0)
@@ -58,6 +78,10 @@ class SocketManager {
             //callStateListener?.onCallStateChanged(CallState.ENDED)
 
             this.disconnect()
+        }
+
+        socket?.on("PONG") {
+            handlePong()
         }
 
         socket?.on("MISSED_CALL") {
@@ -98,7 +122,6 @@ class SocketManager {
         // Event when the callee accepts the call
         socket?.on("ANSWER_OK") { _ ->
             callStateListener?.onCallStateChanged(CallState.ANSWERING)
-            Log.i("SDK CALL", "ANSWER_OK")
         }
 
 //        // Event when the callee accepts the call
@@ -113,7 +136,14 @@ class SocketManager {
 
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
+            Log.i("SDK CALL", "HANGUP")
             callStateListener?.onCallStateChanged(CallState.END)
+            webRTCManager?.close()
+            socket?.disconnect()
+        }
+
+        socket?.on("NO_ANSWER") { _ ->
+            callStateListener?.onCallStateChanged(CallState.TIMEOUT)
             webRTCManager?.close()
             socket?.disconnect()
         }
@@ -144,6 +174,11 @@ class SocketManager {
             callStateListener?.onCallStateChanged(CallState.REFUSED)
         }
 
+        socket?.on("BUSY") { _ ->
+            Log.i("SDK CALL", "BUSY")
+            callStateListener?.onCallStateChanged(CallState.BUSY)
+        }
+
         // Received SDP answer from remote peer
         socket?.on("SDP_ANSWER") { args ->
             //callEventListener.onCallStateChanged(CallState.CONNECTING)
@@ -153,6 +188,33 @@ class SocketManager {
             val sdp = SessionDescription(SessionDescription.Type.ANSWER, sdpString)
             webRTCManager?.setRemoteDescription(sdp)
         }
+    }
+
+    private fun startPingLoop() {
+        Log.i("SDK CALL", "START PING")
+        val thread = Thread {
+            while (socket?.connected() == true) {
+                sendPing()
+                Thread.sleep(5000)
+            }
+        }
+        thread.start()
+    }
+
+    private fun sendPing() {
+        pingStartTime = System.currentTimeMillis()
+        socket?.emit("PING")
+    }
+
+    private fun handlePong() {
+        val latency = System.currentTimeMillis() - pingStartTime
+        latencyAverage = (latencyAverage * 0.8) + (latency * 0.2)
+        if (latency > 300) {
+            connectionStateListener?.onSignalStateChanged("weak")
+        } else {
+            connectionStateListener?.onSignalStateChanged("")
+        }
+        Log.i("SDK CALL", "pong latency $latency")
     }
 
     /**

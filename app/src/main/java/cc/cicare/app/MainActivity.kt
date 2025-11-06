@@ -3,6 +3,8 @@ package cc.cicare.app
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -44,6 +46,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import cc.cicare.sdkcall.CiCareSdkCall
 import cc.cicare.app.theme.MyApplicationTheme
@@ -58,6 +62,7 @@ import java.net.URL
 import androidx.core.content.edit
 import cc.cicare.sdkcall.event.CallEventListener
 import cc.cicare.sdkcall.event.CallState
+import com.google.firebase.messaging.FirebaseMessaging
 
 // ------------ Data Models ------------
 data class User(
@@ -67,6 +72,27 @@ data class User(
 )
 
 class MainActivity : ComponentActivity(), CallEventListener {
+
+    private val requiredPermissions = mutableListOf(
+        android.Manifest.permission.READ_PHONE_STATE
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()
+
+    private fun checkAndRequestPermissions(): Boolean {
+        val notGranted = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        return if (notGranted.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, notGranted.toTypedArray(), 101)
+            false
+        } else {
+            true
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +104,10 @@ class MainActivity : ComponentActivity(), CallEventListener {
         CiCareSdkCall.setAPI(
             "https://sip-gw.c-icare.cc:8443",
             "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+
+        val uri = Uri.parse("android.resource://${this.packageName}/${cc.cicare.sdkcall.R.raw.miremix}")
+
+        CiCareSdkCall.setRingTone(uri)
         enableEdgeToEdge()
 
         val context = this
@@ -90,7 +120,7 @@ class MainActivity : ComponentActivity(), CallEventListener {
                             activity = this@MainActivity,
                             onLoggedIn = { ->
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    CiCareSdkCall.init(context).checkAndRequestPermissions(context)
+                                    checkAndRequestPermissions()
                                 }
                         }
                         )
@@ -140,17 +170,21 @@ fun ContentView(
 
     if (isLoggedIn) {
         onLoggedIn()
-        val fcmToken = prefs.getString("fcm", "")
-        fcmToken?.let {
-            CoroutineScope(Dispatchers.IO).launch {
-                val response = ApiClient.api.saveToken(TokenSaveRequest(currentUserId, it))
-                if (response.isSuccessful) {
-
-                    Log.d("SDK Call", "Token saved ${it}")
-                } else {
-                    Log.e("SDK Call", "Token failed: ${response.code()}")
+        FirebaseMessaging.getInstance().token
+            .addOnCompleteListener { task ->
+                if (!task.isSuccessful) {
+                    Log.w("FCM", "Fetching FCM registration token failed", task.exception)
+                    return@addOnCompleteListener
                 }
-            }
+                val token = task.result
+                CoroutineScope(Dispatchers.IO).launch {
+                    val response = ApiClient.api.saveToken(TokenSaveRequest(currentUserId, token))
+                    if (response.isSuccessful) {
+                        Log.d("SDK Call", "Token saved ${token}")
+                    } else {
+                        Log.e("SDK Call", "Token failed: ${response.code()}")
+                    }
+                }
         }
         CallView(
             currentUserId = currentUserId,

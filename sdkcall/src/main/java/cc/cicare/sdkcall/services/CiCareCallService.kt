@@ -419,6 +419,7 @@ fun hangup() {
     }
 
     fun cancelCall() {
+        Log.i("SDK CALL", "CANCEL")
         socketManager.send("CANCEL", JSONObject().apply {})
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -483,6 +484,7 @@ fun hangup() {
 
     fun setConnectionStateListener(connectionListener: ConnectionStateListener) {
         this.connectionListener = connectionListener
+        this.socketManager.setConnectionStateListener(connectionListener)
     }
 
     override fun onDestroy() {
@@ -585,6 +587,15 @@ fun hangup() {
             CallState.CONNECTED -> {
                 stopRingback()
                 intent?.let { onOngoingCall(it) }
+            }
+            CallState.TIMEOUT -> {
+                stopRingback()
+                stopTimer()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                else
+                    stopForeground(true)
+                stopSelf()
             }
             CallState.END -> {
                 stopRingback()
