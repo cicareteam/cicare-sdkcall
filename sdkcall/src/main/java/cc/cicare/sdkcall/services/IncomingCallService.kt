@@ -116,13 +116,13 @@ class IncomingCallService : Service(), CallStateListener {
         val description = "Missed call from $callerName"
 
         CallNotificationManager.provideNotificationManagerCompat(
-            this, "CALL_MISSED_CHANNEL_ID",
+            this, "CALL_MISSED_CHANNEL_CICARE",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            NotificationManager.IMPORTANCE_LOW else Notification.PRIORITY_LOW
+            NotificationManager.IMPORTANCE_MAX else Notification.PRIORITY_MAX
         )
         val notification = CallNotificationManager.missedCallNotificationBuilder(
             this,
-            "CALL_MISSED_CHANNEL_ID",
+            "CALL_MISSED_CHANNEL_CICARE",
             callerName ?: "unknown",
             callerAvatar ?: "",
             description

@@ -75,7 +75,7 @@ class SocketManager {
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             val error = args.getOrNull(0)
             Log.e("SocketManager", "Socket connection error: $error")
-            //callStateListener?.onCallStateChanged(CallState.ENDED)
+            callStateListener?.onCallStateChanged(CallState.END)
 
             this.disconnect()
         }
@@ -85,7 +85,6 @@ class SocketManager {
         }
 
         socket?.on("MISSED_CALL") {
-            Log.i("SDK CALL", "MISSED")
             callStateListener?.onCallStateChanged(CallState.MISSED)
         }
 
@@ -99,7 +98,6 @@ class SocketManager {
 
         // Event when the callee accepts the call
         socket?.on("INIT_OK") { _ ->
-            Log.i("SDK CALL", "INIT_OK")
             callStateListener?.onCallStateChanged(CallState.CALLING)
             CoroutineScope(Dispatchers.Main).launch {
                 try {
@@ -137,7 +135,6 @@ class SocketManager {
 
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
-            Log.i("SDK CALL", "HANGUP")
             callStateListener?.onCallStateChanged(CallState.END)
             webRTCManager?.close()
             socket?.disconnect()
@@ -176,7 +173,6 @@ class SocketManager {
         }
 
         socket?.on("BUSY") { _ ->
-            Log.i("SDK CALL", "BUSY")
             callStateListener?.onCallStateChanged(CallState.BUSY)
         }
 
@@ -192,7 +188,6 @@ class SocketManager {
     }
 
     private fun startPingLoop() {
-        Log.i("SDK CALL", "START PING")
         val thread = Thread {
             while (socket?.connected() == true) {
                 sendPing()
@@ -204,7 +199,6 @@ class SocketManager {
 
     private fun sendPing() {
         pingStartTime = System.currentTimeMillis()
-        Log.i("SDK CALL", "ping")
         socket?.emit("PING")
     }
 
@@ -216,7 +210,6 @@ class SocketManager {
         } else {
             connectionStateListener?.onSignalStateChanged("")
         }
-        Log.i("SDK CALL", "pong latency $latency")
     }
 
     /**

@@ -6,11 +6,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.*
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -362,8 +365,13 @@ class ScreenCallActivity :
     override fun onStart() {
         super.onStart()
         if (isForegroundMicPermissionGranted()) {
-            Intent(this, CiCareCallService::class.java).also {
-                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+            val intent = Intent(this, CiCareCallService::class.java).also {
+                //bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
             }
         }
 
@@ -374,8 +382,13 @@ class ScreenCallActivity :
 
     override fun onResume() {
         super.onResume()
-        Intent(this, CiCareCallService::class.java).also {
+        val intent = Intent(this, CiCareCallService::class.java).also {
             bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
         }
     }
 
@@ -514,6 +527,8 @@ class ScreenCallActivity :
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+
         checkAndRequestPermissions {
             permissionGranted = it
         }
@@ -537,7 +552,11 @@ class ScreenCallActivity :
                         val intent = Intent(context, CiCareCallService::class.java).apply {
                             action = CiCareCallService.ACTION.INCOMING
                         }
-                        startService(intent)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
                         callService?.let {
                             it.callState.value = "incoming"
                         }
@@ -553,8 +572,15 @@ class ScreenCallActivity :
                         val intent = Intent(context, CiCareCallService::class.java).apply {
                             action = CiCareCallService.ACTION.OUTGOING
                             putExtras(myIntent)
+                        }.also {
+                            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
                         }
-                        startService(intent)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Log.i("SDK CALL", "start service")
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
                         lifecycleScope.launch {
                             callService?.let {
                                 requestOutgoingCall(
@@ -667,10 +693,10 @@ class ScreenCallActivity :
     }
 
     override fun onDestroy() {
-        MessageListenerHolder.listener = null
+        /*MessageListenerHolder.listener = null
         callService?.stopSelf()
         incomingService?.stopSelf()
-        callService?.cancelCall()
+        callService?.cancelCall()*/
         super.onDestroy()
     }
 

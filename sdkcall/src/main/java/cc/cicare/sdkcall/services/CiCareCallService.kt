@@ -11,9 +11,11 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.Lifecycle
@@ -69,6 +71,11 @@ class CiCareCallService:
     private var intent: Intent? = null
 
     var callState = MutableStateFlow("connecting")
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
+
 
     private var metaData: Map<String, String> = hashMapOf(
         "call_busy" to "The customer is busy and cannot be reached",
@@ -203,6 +210,18 @@ class CiCareCallService:
     fun getCallStateFlow(): StateFlow<String> = callState
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).run {
+            newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CiCareCallService::CallWakeLock").apply {
+                acquire(60*60*1000L /*10 minutes*/)
+                Log.i("SDK CALL", "Wake lock")
+            }
+        }
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CiCareCallService::WifiLock")
+        wifiLock?.apply {
+            acquire()
+            Log.i("SDK CALL", "Wifi lock")
+        }
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)?.mapNotNull {
                 val key = it.key as? String
@@ -393,6 +412,7 @@ fun hangup() {
     @SuppressLint("MissingPermission")
     private fun onOutgoingCall(intent: Intent) {
         outgoingIntent = intent
+
         //val callType = intent.getStringExtra("call_type") ?: "outgoing"
         val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
@@ -488,6 +508,10 @@ fun hangup() {
     }
 
     override fun onDestroy() {
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+        }
+        wifiLock?.release()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
             stopForeground(STOP_FOREGROUND_REMOVE)
         else
@@ -543,6 +567,7 @@ fun hangup() {
     override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
         if (::eventListener.isInitialized)
             eventListener.onConnectionStateChanged(state)
+        Log.i("SDK CALL", "peer state" + state.toString())
     }
 
     @SuppressLint("MissingPermission")
@@ -627,9 +652,10 @@ fun hangup() {
                 connectionListener?.onSignalStateChanged("")
             }
             else -> {
-                Log.d("WebRTC", "ICE State: $state")
+                //Log.d("SDK CALL", "ICE State: $state")
             }
         }
+        Log.d("SDK CALL", "ICE State: $state")
     }
 
 
