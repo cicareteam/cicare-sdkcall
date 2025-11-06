@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import cc.cicare.sdkcall.event.CallEventListener
 import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
+import cc.cicare.sdkcall.libs.AES256Decryptor
 import cc.cicare.sdkcall.libs.ApiClient
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
@@ -154,25 +155,31 @@ object CiCareSdkCall {
                      messageActionListener: MessageActionListener
                      ) {
 
-        var base64String = metaData["alert_data"] as? String ?: return
+        val cipherText = metaData["alert_data"] ?: return
 
         // Hapus prefix "base64," kalau ada
-        val prefix = "base64,"
-        if (base64String.contains(prefix)) {
-            base64String = base64String.substringAfter(prefix)
-        }
+        //val prefix = "base64,"
+        //if (base64String.contains(prefix)) {
+        //    base64String = base64String.substringAfter(prefix)
+        //}
 
-        base64String = base64String.trim()
+        //base64String = base64String.trim()
 
-        val remainder = base64String.length % 4
-        if (remainder > 0) {
-            base64String += "=".repeat(4 - remainder)
-        }
+        //val remainder = base64String.length % 4
+        //if (remainder > 0) {
+        //    base64String += "=".repeat(4 - remainder)
+        //}
 
         try {
-            val decodedBytes = Base64.decode(base64String, Base64.DEFAULT)
-            val decodedString = String(decodedBytes, Charsets.UTF_8)
-            val jsonObject = JSONObject(decodedString)
+            //val decodedBytes = Base64.decode(base64String, Base64.DEFAULT)
+            //val decodedString = String(decodedBytes, Charsets.UTF_8)
+
+//            keynya adalah
+            val encryptionKey = "0123456789abcdef0123456789abcdef"
+            val decryptedJson = AES256Decryptor.decrypt(cipherText, encryptionKey)
+
+            val jsonObject = JSONObject(decryptedJson)
+            Log.d("SDK CALL C", "jsonObject: $jsonObject")
 
             val server = jsonObject.getString("server") ?: return
             val token = jsonObject.getString("token") ?: return

@@ -274,17 +274,58 @@ class CiCareCallService:
 //        }
 //    }
 
-    fun hangup() {
-        socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
-        if (::eventListener.isInitialized)
+//    fun hangup() {
+//        socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
+//        if (::eventListener.isInitialized)
+//            eventListener.onCallStateChanged(CallState.END)
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+//            stopForeground(STOP_FOREGROUND_REMOVE)
+//        } else {
+//            stopForeground(true)
+//        }
+//        print("SDK HANGUP");
+//        stopSelf()
+//        webRTCManager.close()
+//        socketManager.disconnect()
+//        stopRingback()
+//        stopTimer()
+//        stopForeground(true)
+//        stopSelf()
+//    }
+fun hangup() {
+    try {
+        // 1️⃣ Kirim sinyal ke server
+        socketManager.send("REQUEST_HANGUP", JSONObject())
+
+        // 2️⃣ Update UI / listener call state
+        if (::eventListener.isInitialized) {
             eventListener.onCallStateChanged(CallState.END)
+        }
+
+        // 3️⃣ Hentikan semua audio & timer
+        stopRingback()
+        stopTimer()
+
+        // 4️⃣ Tutup WebRTC & signaling
+        webRTCManager.close()
+        socketManager.disconnect()
+
+        // 5️⃣ Hentikan notifikasi foreground
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
             stopForeground(true)
         }
+
+        // 6️⃣ Log dan hentikan service
+        Log.i("SDK CALL", "Hangup pressed, service stopping")
         stopSelf()
+
+    } catch (e: Exception) {
+        Log.e("SDK CALL", "Error while hanging up: ${e.message}", e)
     }
+}
+
 
     fun forceStop() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
