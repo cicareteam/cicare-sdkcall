@@ -127,12 +127,15 @@ class CiCareCallService:
     }
 
     override fun onCreate() {
+        super.onCreate()
         requestAudioFocus()
         Log.i("SDK Call", "onCreate")
         webRTCManager = WebRTCManager(this, this)
         socketManager = SocketManager()
         socketManager.setCallStateListener(this)
         socketManager.setWebrtc(webRTCManager)
+        acquireWakeLock()
+        keepWifiOn()
     }
 
     private fun requestAudioFocus() {
@@ -207,21 +210,33 @@ class CiCareCallService:
         timerJob?.cancel()
     }
 
+    private fun acquireWakeLock() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "CiCareCallService::CallWakeLock"
+        )
+        wakeLock?.acquire(60 * 60 * 1000L) // 1 jam, bisa diperpanjang
+    }
+
+    private fun releaseWakeLock() {
+        if (wakeLock?.isHeld != true) wakeLock?.release()
+    }
+
+    private fun keepWifiOn() {
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CiCareCallService::WifiLock")
+        wifiLock?.acquire()
+    }
+
+    private fun releaseWifiLock() {
+        if (wifiLock?.isHeld != true) wifiLock?.release()
+    }
+
     fun getCallStateFlow(): StateFlow<String> = callState
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).run {
-            newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CiCareCallService::CallWakeLock").apply {
-                acquire(60*60*1000L /*10 minutes*/)
-                Log.i("SDK CALL", "Wake lock")
-            }
-        }
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CiCareCallService::WifiLock")
-        wifiLock?.apply {
-            acquire()
-            Log.i("SDK CALL", "Wifi lock")
-        }
+
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)?.mapNotNull {
                 val key = it.key as? String
@@ -347,6 +362,12 @@ fun hangup() {
 
 
     fun forceStop() {
+        releaseWakeLock()
+        releaseWifiLock()
+        stopRingback()
+        stopTimer()
+        webRTCManager.close()
+        socketManager.disconnect()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -417,20 +438,20 @@ fun hangup() {
         val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
         CallNotificationManager.provideNotificationManagerCompat(this,
-            "CALL_OUTGOING_CHANNEL_ID",
+            "CALL_OUTGOING_CICARE",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationManager.IMPORTANCE_LOW
-            } else Notification.PRIORITY_LOW)
+                NotificationManager.IMPORTANCE_HIGH
+            } else Notification.PRIORITY_HIGH)
         val notification = CallNotificationManager.outgoingCallNotificationBuilder(
             this,
             intent,
-            "CALL_OUTGOING_CHANNEL_ID",
+            "CALL_OUTGOING_CICARE",
             metaData["call_${callState.value}"] ?: callState.value,
             calleeName,
             calleeAvatar
         )
 
-        startForeground(101, notification.build())
+        startForeground(104, notification.build())
         /*startActivity(Intent(this, ScreenCallActivity::class.java).apply {
             action = ACTION.OUTGOING
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -452,23 +473,23 @@ fun hangup() {
     fun outgoingCallStateUpdate(callState: String) {
 
         val notificationManager = CallNotificationManager.provideNotificationManagerCompat(this,
-            "CALL_OUTGOING_CHANNEL_ID",
+            "CALL_OUTGOING_CICARE",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationManager.IMPORTANCE_LOW
-            } else Notification.PRIORITY_LOW)
+                NotificationManager.IMPORTANCE_DEFAULT
+            } else Notification.PRIORITY_DEFAULT)
         this.callState.value = callState
         val calleeName = outgoingIntent?.getStringExtra("callee_name") ?: "unknown"
         val calleeAvatar = outgoingIntent?.getStringExtra("callee_avatar") ?: ""
         val notification = CallNotificationManager.outgoingCallNotificationBuilder(
             this,
             outgoingIntent!!,
-            "CALL_OUTGOING_CHANNEL_ID",
+            "CALL_OUTGOING_CICARE",
             metaData[callState] ?: callState,
             calleeName,
             calleeAvatar
         )
 
-        notificationManager.notify(101, notification.build())
+        notificationManager.notify(104, notification.build())
     }
 
     private fun onOngoingCall(intent: Intent) {
@@ -478,19 +499,19 @@ fun hangup() {
         val callerAvatar =
             if (callType == "incoming") intent.getStringExtra("caller_avatar") else intent.getStringExtra("callee_avatar")
         CallNotificationManager.provideNotificationManagerCompat(this,
-            "CALL_ONGOING_CHANNEL_ID",
+            "CALL_ONGOING_CICARE",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationManager.IMPORTANCE_LOW
-            } else Notification.PRIORITY_LOW)
+                NotificationManager.IMPORTANCE_DEFAULT
+            } else Notification.PRIORITY_DEFAULT)
         val notification = CallNotificationManager.ongoingCallNotificationBuilder(
             this,
             intent,
-            "CALL_ONGOING_CHANNEL_ID",
+            "CALL_ONGOING_CICARE",
             callerName ?: "unknown",
             callerAvatar ?: ""
         )
         eventListener.onCallStateChanged(CallState.CONNECTED)
-        startForeground(101, notification.build())
+        startForeground(104, notification.build())
         startCallTimer()
     }
 
@@ -505,21 +526,6 @@ fun hangup() {
     fun setConnectionStateListener(connectionListener: ConnectionStateListener) {
         this.connectionListener = connectionListener
         this.socketManager.setConnectionStateListener(connectionListener)
-    }
-
-    override fun onDestroy() {
-        if (wakeLock?.isHeld == true) {
-            wakeLock?.release()
-        }
-        wifiLock?.release()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        else
-            stopForeground(true)
-        //signaling.close()
-        webRTCManager.close()
-        socketManager.disconnect()
-        super.onDestroy()
     }
 
     /**

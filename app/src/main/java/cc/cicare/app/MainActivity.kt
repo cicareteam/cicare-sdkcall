@@ -2,11 +2,14 @@ package cc.cicare.app
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -99,6 +102,18 @@ class MainActivity : ComponentActivity(), CallEventListener {
 
         CiCareSdkCall.init(this)
         CiCareSdkCall.setEventListener(this)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent()
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.setData(Uri.parse("package:$packageName"))
+                // You might need to start this intent from an Activity context
+                startActivity(intent)
+            }
+        }
 
 
         CiCareSdkCall.setAPI(

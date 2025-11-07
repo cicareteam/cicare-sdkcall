@@ -364,9 +364,9 @@ class ScreenCallActivity :
 
     override fun onStart() {
         super.onStart()
-        if (isForegroundMicPermissionGranted()) {
+        if (isForegroundMicPermissionGranted() && !bound) {
             val intent = Intent(this, CiCareCallService::class.java).also {
-                //bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)
@@ -382,19 +382,21 @@ class ScreenCallActivity :
 
     override fun onResume() {
         super.onResume()
-        val intent = Intent(this, CiCareCallService::class.java).also {
-            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        if(!bound) {
+            val intent = Intent(this, CiCareCallService::class.java).also {
+                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
         }
     }
 
     override fun onStop() {
         super.onStop()
-        if (bound) {
+        /*if (bound) {
             callService?.forceStop()
             unbindService(callServiceConnection)
             bound = false
@@ -402,7 +404,7 @@ class ScreenCallActivity :
         if (inbound) {
             unbindService(incomingServiceConnection)
             inbound = false
-        }
+        }*/
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -419,7 +421,6 @@ class ScreenCallActivity :
                 }
             }
         }
-        Log.i("SDK Call", "New Intent")
         callService?.setCallEventListener(eventListener)
         callService?.setConnectionStateListener(connectionLister)
         // handle update state or extras here
@@ -534,7 +535,8 @@ class ScreenCallActivity :
         }
 
         window.addFlags(
-            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
@@ -576,7 +578,6 @@ class ScreenCallActivity :
                             bindService(it, callServiceConnection, BIND_AUTO_CREATE)
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            Log.i("SDK CALL", "start service")
                             startForegroundService(intent)
                         } else {
                             startService(intent)
