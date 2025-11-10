@@ -74,6 +74,9 @@ class SocketManager {
             if (elapsed > 1500) {
                 connectionStateListener?.onSignalStateChanged("weak")
             }
+            /*if (disconnectCount > 0) {
+                callStateListener?.onCallStateChanged(CallState.RECONNECTING)
+            }*/
             disconnectCount = 0
             startPingLoop()
         }

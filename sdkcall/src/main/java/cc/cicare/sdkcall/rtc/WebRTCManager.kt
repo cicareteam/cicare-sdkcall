@@ -77,11 +77,16 @@ class WebRTCManager(
         Log.i("WebRTC", "Reconnecting PeerConnection...")
 
         try {
-
-            // Buat ulang konfigurasi RTC
+            peerConnection?.let {
+                try {
+                    it.close()
+                    it.dispose()
+                } catch (e: Exception) {
+                    Log.e("WebRTC", "Error disposing old peer: ${e.message}")
+                }
+            }
             val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
 
-            // Buat peer baru
             peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
 
                 override fun onIceCandidate(candidate: IceCandidate) {

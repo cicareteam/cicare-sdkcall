@@ -812,6 +812,9 @@ class ScreenCallActivity :
         } else {
             connectionState = state
         }
+        if (connectionState == "lost") {
+            hangup()
+        }
     }
 
     override fun onNetworkError(state: String, systemError: Boolean) {

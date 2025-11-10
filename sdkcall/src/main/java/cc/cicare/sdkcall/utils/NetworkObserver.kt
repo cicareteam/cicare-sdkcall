@@ -15,9 +15,12 @@ class NetworkObserver(
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            GlobalScope.launch(Dispatchers.IO) {
+            scope.launch {
+                delay(500)
                 val hasInternet = hasInternetConnection()
                 withContext(Dispatchers.Main) {
                     listener(hasInternet)
@@ -26,10 +29,17 @@ class NetworkObserver(
         }
 
         override fun onLost(network: Network) {
-            listener(false)
+            scope.launch {
+                delay(1500) // delay 1.5 detik agar sempat pindah jaringan
+                val hasInternet = hasInternetConnection()
+                withContext(Dispatchers.Main) {
+                    listener(hasInternet) // false jika benar-benar offline
+                }
+            }
         }
 
         override fun onUnavailable() {
+            Log.i("NetworkObserver", "onUnavail")
             listener(false)
         }
     }

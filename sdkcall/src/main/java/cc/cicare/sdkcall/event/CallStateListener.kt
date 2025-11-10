@@ -22,6 +22,7 @@ enum class CallState {
      */
     RINGING,
     RINGING_OK,
+    RECONNECTING,
 
     /**
      * Call is being connected and signaling/negotiation is in progress.

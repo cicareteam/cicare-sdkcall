@@ -444,7 +444,7 @@ fun hangup() {
     @SuppressLint("MissingPermission")
     private fun onOutgoingCall(intent: Intent) {
         outgoingIntent = intent
-
+        this.intent = intent
         //val callType = intent.getStringExtra("call_type") ?: "outgoing"
         val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
@@ -611,6 +611,7 @@ fun hangup() {
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 playRingback(this)
             }
+            CallState.RECONNECTING -> {}
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.BUSY -> {
                 stopRingback()
@@ -668,21 +669,19 @@ fun hangup() {
                 connectionListener?.onSignalStateChanged("connected")
             }
             PeerConnection.IceConnectionState.DISCONNECTED -> {
-                connectionListener?.onSignalStateChanged("reconnecting")
-            }
-            PeerConnection.IceConnectionState.FAILED -> {
                 reconnectAttempt++
                 if (reconnectAttempt > 3) {
-                    connectionListener?.onSignalStateChanged("lost")
-                    hangup()
+                    webRTCManager.close()
                     return
                 }
                 connectionListener?.onSignalStateChanged("reconnecting")
                 renegotiateRtC("OFFER")
             }
+            PeerConnection.IceConnectionState.FAILED -> {
+                webRTCManager.close()
+            }
             PeerConnection.IceConnectionState.CLOSED -> {
                 connectionListener?.onSignalStateChanged("lost")
-                hangup()
             }
             else -> {
                 //Log.d("SDK CALL", "ICE State: $state")
