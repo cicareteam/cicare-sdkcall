@@ -160,7 +160,7 @@ class IncomingCallService : Service(), CallStateListener {
                 callerName,
                 callerAvatar
             )
-            startForeground(1, notification.build())
+            startForeground(104, notification.build())
         }
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {

@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "cc.cicare.sdkcall"
-    version = "1.2.0-rc.9.5"
+    version = "1.2.0-rc.9.6"
     compileSdk = 35
 
     defaultConfig {
@@ -79,7 +79,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 groupId = "com.github.cicareteam"
                 artifactId = "cicare-sdkcall"
-                version = "1.2.0-rc.9.5"
+                version = "1.2.0-rc.9.6"
                 from(components["release"])
             }
         }

@@ -28,6 +28,7 @@ class SocketManager {
     private var connectionStateListener: ConnectionStateListener? = null
 
     private var webRTCManager: WebRTCManager? = null
+    private var disconnectCount: Int = 0
 
     private var connectStartTime: Long = 0
     private var pingStartTime: Long = 0
@@ -56,28 +57,45 @@ class SocketManager {
         val opts = IO.Options().apply {
             query = "token=$token"
             reconnection = true
-            reconnectionAttempts = Int.MAX_VALUE
+            reconnectionAttempts = 3
             reconnectionDelay = 1000
+            reconnectionDelayMax = 3000
+            timeout = 5000
+            forceNew = true
+            transports = arrayOf("websocket")
         }
 
         socket = IO.socket(wssUrl, opts)
         connectStartTime = System.currentTimeMillis()
         socket?.connect()
-        Log.i("SDK CALL", "CONNECTING")
+
         socket?.on(Socket.EVENT_CONNECT) {
             val elapsed = System.currentTimeMillis() - connectStartTime
             if (elapsed > 1500) {
                 connectionStateListener?.onSignalStateChanged("weak")
             }
+            disconnectCount = 0
             startPingLoop()
+        }
+
+        socket?.on(Socket.EVENT_DISCONNECT) {
+            disconnectCount++
+            if (disconnectCount > 1) {
+                callStateListener?.onCallStateChanged(CallState.END)
+                this.disconnect()
+            }
         }
 
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             val error = args.getOrNull(0)
             Log.e("SocketManager", "Socket connection error: $error")
-            callStateListener?.onCallStateChanged(CallState.END)
+            if (error.toString() == "io.socket.engineio.client.EngineIOException: websocket error") {
+                socket?.connect()
+            } else {
+                callStateListener?.onCallStateChanged(CallState.END)
 
-            this.disconnect()
+                this.disconnect()
+            }
         }
 
         socket?.on("PONG") {
@@ -135,7 +153,7 @@ class SocketManager {
 
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
-            callStateListener?.onCallStateChanged(CallState.END)
+            //callStateListener?.onCallStateChanged(CallState.END)
             webRTCManager?.close()
             socket?.disconnect()
         }

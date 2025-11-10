@@ -18,6 +18,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import androidx.compose.ui.text.toLowerCase
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.R
@@ -42,6 +43,7 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
+import java.util.Locale
 
 interface TimeTickerListener {
     fun onTimeTicketUpdate(seconds: Long)
@@ -67,6 +69,8 @@ class CiCareCallService:
     private val serviceScope = CoroutineScope(Dispatchers.IO)
 
     private var timerJob: Job? = null
+
+    private var reconnectAttempt = 0
 
     private var intent: Intent? = null
 
@@ -327,6 +331,8 @@ class CiCareCallService:
 //        stopSelf()
 //    }
 fun hangup() {
+    if (callState.value.toLowerCase(Locale.ROOT) == "end") return
+    callState.value = "end"
     try {
         // 1️⃣ Kirim sinyal ke server
         socketManager.send("REQUEST_HANGUP", JSONObject())
@@ -353,7 +359,7 @@ fun hangup() {
 
         // 6️⃣ Log dan hentikan service
         Log.i("SDK CALL", "Hangup pressed, service stopping")
-        stopSelf()
+        forceStop()
 
     } catch (e: Exception) {
         Log.e("SDK CALL", "Error while hanging up: ${e.message}", e)
@@ -374,6 +380,11 @@ fun hangup() {
             stopForeground(true)
         }
         stopSelf()
+    }
+
+    override fun onDestroy() {
+        forceStop()
+        super.onDestroy()
     }
 
     fun setMute(isMuted: Boolean) {
@@ -573,7 +584,6 @@ fun hangup() {
     override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
         if (::eventListener.isInitialized)
             eventListener.onConnectionStateChanged(state)
-        Log.i("SDK CALL", "peer state" + state.toString())
     }
 
     @SuppressLint("MissingPermission")
@@ -600,7 +610,6 @@ fun hangup() {
             CallState.RINGING ->  {
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 playRingback(this)
-                Log.i("CALL", "RINGING")
             }
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.BUSY -> {
@@ -629,13 +638,8 @@ fun hangup() {
                 stopSelf()
             }
             CallState.END -> {
-                stopRingback()
-                stopTimer()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                else
-                    stopForeground(true)
-                stopSelf()
+                hangup()
+                Log.i("SDK CALL", "HANGUP")
             }
 
             CallState.RINGING_OK -> {}
@@ -643,19 +647,42 @@ fun hangup() {
         }
     }
 
+    fun renegotiateRtC(sdpType: String) {
+        socketManager.send("RECONNECT", JSONObject().apply {})
+        CoroutineScope(Dispatchers.Main).launch {
+            webRTCManager.reconnectPeer()
+            val sdp = webRTCManager.createOffer()
+            socketManager.send("SDP_$sdpType", JSONObject().apply {
+                put("sdp", JSONObject().apply {
+                    put("type", sdp.type.toString())
+                    put("sdp", sdp.description)
+                })
+            })
+        }
+    }
+
     override fun onIceConnectionStateChanged(state: PeerConnection.IceConnectionState) {
         when (state) {
             PeerConnection.IceConnectionState.CONNECTED -> {
+                reconnectAttempt = 0
                 connectionListener?.onSignalStateChanged("connected")
             }
             PeerConnection.IceConnectionState.DISCONNECTED -> {
-                connectionListener?.onSignalStateChanged("weak_signal")
+                connectionListener?.onSignalStateChanged("reconnecting")
             }
             PeerConnection.IceConnectionState.FAILED -> {
-                connectionListener?.onSignalStateChanged("lost")
+                reconnectAttempt++
+                if (reconnectAttempt > 3) {
+                    connectionListener?.onSignalStateChanged("lost")
+                    hangup()
+                    return
+                }
+                connectionListener?.onSignalStateChanged("reconnecting")
+                renegotiateRtC("OFFER")
             }
             PeerConnection.IceConnectionState.CLOSED -> {
-                connectionListener?.onSignalStateChanged("")
+                connectionListener?.onSignalStateChanged("lost")
+                hangup()
             }
             else -> {
                 //Log.d("SDK CALL", "ICE State: $state")

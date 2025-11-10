@@ -73,6 +73,71 @@ class WebRTCManager(
 
     }
 
+    fun reconnectPeer() {
+        Log.i("WebRTC", "Reconnecting PeerConnection...")
+
+        try {
+
+            // Buat ulang konfigurasi RTC
+            val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
+
+            // Buat peer baru
+            peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
+
+                override fun onIceCandidate(candidate: IceCandidate) {
+                    callback.onIceCandidateGenerated(candidate)
+                }
+
+                override fun onTrack(transceiver: RtpTransceiver?) {
+                    transceiver?.receiver?.track()?.let { track ->
+                        if (track is AudioTrack) {
+                            Log.d("WebRTC", "Remote audio track received after reconnect")
+                        }
+                    }
+                }
+
+                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                    if (state != null) {
+                        Log.d("WebRTC", "ICE Connection State after reconnect: $state")
+                        callback.onIceConnectionStateChanged(state)
+                    }
+                }
+
+                override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
+                    if (newState != null) {
+                        Log.d("WebRTC", "PeerConnection state changed: $newState")
+                        callback.onConnectionStateChanged(newState)
+                    }
+                }
+
+                override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
+                override fun onIceConnectionReceivingChange(p0: Boolean) {}
+                override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
+                override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
+                override fun onAddStream(p0: MediaStream?) {}
+
+                override fun onRemoveStream(p0: MediaStream?) {}
+                override fun onDataChannel(p0: DataChannel?) {}
+                override fun onRenegotiationNeeded() {}
+            })
+
+            // Re-attach audio track jika sudah dibuat
+            if (::audioTrack.isInitialized) {
+                try {
+                    peerConnection?.addTrack(audioTrack)
+                    Log.i("WebRTC", "Audio track reattached to new peer")
+                } catch (e: Exception) {
+                    Log.e("WebRTC", "Failed to reattach audio track: ${e.message}")
+                }
+            }
+
+            Log.i("WebRTC", "PeerConnection successfully reconnected")
+
+        } catch (e: Exception) {
+            Log.e("WebRTC", "Failed to reconnect PeerConnection: ${e.message}")
+        }
+    }
+
     fun initMic() {
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))

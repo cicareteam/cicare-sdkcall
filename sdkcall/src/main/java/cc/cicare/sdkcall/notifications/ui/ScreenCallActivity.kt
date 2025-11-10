@@ -85,6 +85,7 @@ import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
+import cc.cicare.sdkcall.utils.NetworkObserver
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
@@ -204,6 +205,9 @@ class ScreenCallActivity :
     private var networkErrorText by mutableStateOf("")
     private var showErrorDialog by mutableStateOf(false)
     private var isSystemError by mutableStateOf(false)
+    private var isOutgoingCall by mutableStateOf(false)
+
+    private lateinit var networkObserver: NetworkObserver
 
     private val callServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -271,6 +275,7 @@ class ScreenCallActivity :
             )
         } else {
             try {
+                isOutgoingCall = true
                 when (val result = CallRepository.requestCall(
                     CallRequest(
                         callerId = callInfo.callerId,
@@ -364,6 +369,7 @@ class ScreenCallActivity :
 
     override fun onStart() {
         super.onStart()
+        networkObserver.start()
         if (isForegroundMicPermissionGranted() && !bound) {
             val intent = Intent(this, CiCareCallService::class.java).also {
                 bindService(it, callServiceConnection, BIND_AUTO_CREATE)
@@ -375,27 +381,26 @@ class ScreenCallActivity :
             }
         }
 
-        Intent(this, IncomingCallService::class.java).also {
-            bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
+        if (!isOutgoingCall && !inbound && !bound) {
+            Intent(this, IncomingCallService::class.java).also {
+                bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if(!bound) {
+        if(!bound ) {
             val intent = Intent(this, CiCareCallService::class.java).also {
                 bindService(it, callServiceConnection, BIND_AUTO_CREATE)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            startService(intent)
         }
     }
 
     override fun onStop() {
         super.onStop()
+        networkObserver.stop()
         /*if (bound) {
             callService?.forceStop()
             unbindService(callServiceConnection)
@@ -528,6 +533,17 @@ class ScreenCallActivity :
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        networkObserver = NetworkObserver(this) { isConnected ->
+            if (isConnected) {
+            } else {
+                callEventListener?.onError(100, "No internet connection")
+                onNetworkError(
+                    state = (metaData["call_failed_no_connection"]
+                        ?: "No internet connection") as String, systemError = false
+                )
+            }
+        }
+
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 
         checkAndRequestPermissions {
@@ -550,9 +566,12 @@ class ScreenCallActivity :
 
                 checkAndRequestPermissions { granted ->
                     if (granted) {
-                        Log.i("SDK CALL", "Granted")
+                        isOutgoingCall = false
                         val intent = Intent(context, CiCareCallService::class.java).apply {
                             action = CiCareCallService.ACTION.INCOMING
+                            putExtras(myIntent)
+                        }.also {
+                            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             startForegroundService(intent)
@@ -698,6 +717,15 @@ class ScreenCallActivity :
         callService?.stopSelf()
         incomingService?.stopSelf()
         callService?.cancelCall()*/
+        if (bound) {
+            callService?.forceStop()
+            unbindService(callServiceConnection)
+            bound = false
+        }
+        if (inbound) {
+            unbindService(incomingServiceConnection)
+            inbound = false
+        }
         super.onDestroy()
     }
 
@@ -744,6 +772,11 @@ class ScreenCallActivity :
             } else {
                 viewModel.updateState(metaData["call_"+callState.name.lowercase()].toString())
             }
+            if (bound) {
+                callService?.forceStop()
+                unbindService(callServiceConnection)
+                bound = false
+            }
 
             Handler(Looper.getMainLooper()).postDelayed({
                 finish()
@@ -773,6 +806,7 @@ class ScreenCallActivity :
     }
 
     override fun onSignalStateChanged(state: String) {
+        if (state == "") return
         if (callService?.callState == MutableStateFlow("connected")) {
             connectionState = if (state == "connected") "" else state
         } else {
