@@ -18,7 +18,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.RequiresPermission
-import androidx.compose.ui.text.toLowerCase
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.R
@@ -61,6 +60,7 @@ class CiCareCallService:
     private lateinit var tickerListener: TimeTickerListener
     private var connectionListener: ConnectionStateListener? = null
 
+    private var callName: String? = null
 
     private var outgoingIntent: Intent? = null
 
@@ -75,6 +75,8 @@ class CiCareCallService:
     private var intent: Intent? = null
 
     var callState = MutableStateFlow("connecting")
+
+    private var isClosed = false
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -240,7 +242,7 @@ class CiCareCallService:
     fun getCallStateFlow(): StateFlow<String> = callState
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-
+        isClosed = false
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)?.mapNotNull {
                 val key = it.key as? String
@@ -331,6 +333,7 @@ class CiCareCallService:
 //        stopSelf()
 //    }
 fun hangup() {
+    isClosed = true
     if (callState.value.toLowerCase(Locale.ROOT) == "end") return
     callState.value = "end"
     try {
@@ -368,6 +371,7 @@ fun hangup() {
 
 
     fun forceStop() {
+        isClosed = true
         releaseWakeLock()
         releaseWifiLock()
         stopRingback()
@@ -389,6 +393,9 @@ fun hangup() {
 
     fun setMute(isMuted: Boolean) {
         webRTCManager.setMicEnabled(isMuted)
+        socketManager.send("MUTE", JSONObject().apply {
+            put("mute", isMuted)
+        })
     }
 
     fun setSpeaker(isSpeakerOn: Boolean) {
@@ -447,6 +454,7 @@ fun hangup() {
         this.intent = intent
         //val callType = intent.getStringExtra("call_type") ?: "outgoing"
         val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
+        callName = calleeName
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
         CallNotificationManager.provideNotificationManagerCompat(this,
             "CALL_OUTGOING_CICARE",
@@ -471,7 +479,7 @@ fun hangup() {
     }
 
     fun cancelCall() {
-        Log.i("SDK CALL", "CANCEL")
+        isClosed = true
         socketManager.send("CANCEL", JSONObject().apply {})
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -518,7 +526,7 @@ fun hangup() {
             this,
             intent,
             "CALL_ONGOING_CICARE",
-            callerName ?: "unknown",
+            callerName ?: this.callName ?: "unknown",
             callerAvatar ?: ""
         )
         eventListener.onCallStateChanged(CallState.CONNECTED)
@@ -649,6 +657,7 @@ fun hangup() {
     }
 
     fun renegotiateRtC(sdpType: String) {
+        if (isClosed) return;
         socketManager.send("RECONNECT", JSONObject().apply {})
         CoroutineScope(Dispatchers.Main).launch {
             webRTCManager.reconnectPeer()

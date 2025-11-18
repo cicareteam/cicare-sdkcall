@@ -21,10 +21,10 @@ class NetworkObserver(
         override fun onAvailable(network: Network) {
             scope.launch {
                 delay(500)
-                val hasInternet = hasInternetConnection()
+                /*val hasInternet = hasInternetConnection()
                 withContext(Dispatchers.Main) {
                     listener(hasInternet)
-                }
+                }*/
             }
         }
 
