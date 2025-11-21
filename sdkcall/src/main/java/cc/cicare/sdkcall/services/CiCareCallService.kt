@@ -393,9 +393,9 @@ fun hangup() {
 
     fun setMute(isMuted: Boolean) {
         webRTCManager.setMicEnabled(isMuted)
-        socketManager.send("MUTE", JSONObject().apply {
+        /*socketManager.send("MUTE", JSONObject().apply {
             put("mute", isMuted)
-        })
+        })*/
     }
 
     fun setSpeaker(isSpeakerOn: Boolean) {
