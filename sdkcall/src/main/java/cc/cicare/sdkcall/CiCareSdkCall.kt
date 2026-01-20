@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.util.Base64
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultCallback
@@ -125,7 +124,7 @@ object CiCareSdkCall {
         if (notGranted.isEmpty()) return true
 
         return suspendCancellableCoroutine { continuation ->
-            val requestCode = 1001
+            // val requestCode = 1001
 
             val callback = object : ActivityResultCallback<Map<String, Boolean>> {
                 override fun onActivityResult(result: Map<String, Boolean>) {
@@ -185,15 +184,14 @@ object CiCareSdkCall {
             val token = jsonObject.getString("token") ?: return
             val isFromPhone = jsonObject.getBoolean("isFromPhone")
 
-            val ctx = contextRef?.get()
-            if (ctx == null) return
+            val ctx = contextRef?.get() ?: return
 
             MessageListenerHolder.listener = messageActionListener
 
 
             val meta: HashMap<String, String> = HashMap(metaData)
-            var caller = if(callerName == "" || callerName == null) { "Green SM Driver" } else { callerName }
-            var callee = if(calleeName == "" || calleeName == null) { "Green SM Customer" } else { calleeName }
+            val caller = if(callerName == "" || callerName == null) { "Caller" } else { callerName }
+            val callee = if(calleeName == "" || calleeName == null) { "Callee" } else { calleeName }
             val intent = Intent(ctx, IncomingCallService::class.java).apply {
                 action = CiCareCallService.ACTION.INCOMING
                 putExtra("call_type", "incoming")
@@ -221,24 +219,23 @@ object CiCareSdkCall {
     fun makeCall(
                  activity: ComponentActivity,
                  callerId: String,
-                 callerName: String? = "Green SM Driver",
+                 callerName: String? = "Caller",
                  callerAvatar: String? = "",
                  calleeId: String,
-                 calleeName: String? = "Green SM Customer",
+                 calleeName: String? = "Callee",
                  calleeAvatar: String = "",
                  checkSum: String,
                  metaData: Map<String, String> = emptyMap()) {
-        val ctx = contextRef?.get()
-        if (ctx == null) return
+        val ctx = contextRef?.get() ?: return
         CoroutineScope(Dispatchers.Main).launch {
             if (isForegroundMicPermissionGranted(activity)) {
-                var caller = if (callerName == "" || callerName == null) {
-                    "Green SM Driver"
+                val caller = if (callerName == "" || callerName == null) {
+                    "Caller"
                 } else {
                     callerName
                 }
-                var callee = if (calleeName == "" || calleeName == null) {
-                    "Green SM Customer"
+                val callee = if (calleeName == "" || calleeName == null) {
+                    "Callee"
                 } else {
                     calleeName
                 }
@@ -260,6 +257,44 @@ object CiCareSdkCall {
                 MessageListenerHolder.callEventListener?.onError(101, "Permisssion not granted")
             }
         }
+    }
 
+    fun makeCallSip(
+        activity: ComponentActivity,
+        callerId: String,
+        callerName: String? = "Caller",
+        callerAvatar: String? = "",
+        destination: String,
+        destinationName: String,
+        destinationAvatar: String,
+        checkSum: String,
+        metaData: Map<String, String> = emptyMap()) {
+        val ctx = contextRef?.get() ?: return
+        CoroutineScope(Dispatchers.Main).launch {
+            if (isForegroundMicPermissionGranted(activity)) {
+                val caller = if (callerName == "" || callerName == null) {
+                    "Caller"
+                } else {
+                    callerName
+                }
+                val intent = Intent(ctx, ScreenCallActivity::class.java).apply {
+                    action = CiCareCallService.ACTION.OUTGOING
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    putExtra("call_type", "outgoing_sip")
+                    putExtra("destination", destination)
+                    putExtra("caller_id", callerId)
+                    putExtra("caller_name", caller)
+                    putExtra("caller_avatar", callerAvatar)
+                    putExtra("callee_id", destination)
+                    putExtra("callee_name", destinationName)
+                    putExtra("callee_avatar", destinationAvatar)
+                    putExtra("checksum", checkSum)
+                    putExtra("meta_data", HashMap(metaData))
+                }
+                ctx.startActivity(intent)
+            } else {
+                MessageListenerHolder.callEventListener?.onError(101, "Permisssion not granted")
+            }
+        }
     }
 }

@@ -1,19 +1,18 @@
 package cc.cicare.sdkcall.notifications.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.*
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -22,12 +21,17 @@ import android.os.Looper
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,19 +49,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -75,23 +82,23 @@ import cc.cicare.sdkcall.event.CallEventListener
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
-import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
 import cc.cicare.sdkcall.libs.CallRepository
 import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.libs.CallResult
+import cc.cicare.sdkcall.libs.CallSipRequest
 import cc.cicare.sdkcall.notifications.ui.icons.SpeakerBluetooth
 import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
+import cc.cicare.sdkcall.ui.DialPad
 import cc.cicare.sdkcall.utils.NetworkObserver
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
-import kotlin.coroutines.resume
 
 data class CallInfo (
     val callerId: String,
@@ -102,6 +109,14 @@ data class CallInfo (
     val calleeAvatar: String,
     val checksum: String,
 )
+
+data class CallSipInfo (
+    val callerId: String,
+    val callerName: String,
+    val callerAvatar: String,
+    val destination: String,
+)
+
 class ScreenCallActivity :
     ComponentActivity(),
     CallStateListener,
@@ -129,9 +144,9 @@ class ScreenCallActivity :
     private var isSpeakerOn by mutableStateOf(false)
     private var isOnBluetooth by mutableStateOf(false)
 
-    private val listener: MessageActionListener?
+    /*private val listener: MessageActionListener?
         get() = MessageListenerHolder.listener
-
+*/
     private val callEventListener: CallEventListener?
         get() = MessageListenerHolder.callEventListener
 
@@ -237,18 +252,32 @@ class ScreenCallActivity :
                     CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
                         if (permissionGranted) {
                             Log.i("SDK CALL", "OUTGOING GRANTED")
-                            requestOutgoingCall(
-                                callInfo = CallInfo(
-                                    callerId = intent.getStringExtra("caller_id") ?: "",
-                                    callerName = intent.getStringExtra("caller_name") ?: "",
-                                    callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
-                                    calleeId = intent.getStringExtra("callee_id") ?: "",
-                                    calleeName = intent.getStringExtra("callee_name") ?: "",
-                                    calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
-                                    checksum = intent.getStringExtra("checksum") ?: "",
-                                ),
-                                callService = service
-                            )
+                            val callType = intent.getStringExtra("call_type") ?: "outgoing"
+
+                            if (callType == "outgoing") {
+                                requestOutgoingCall(
+                                    callInfo = CallInfo(
+                                        callerId = intent.getStringExtra("caller_id") ?: "",
+                                        callerName = intent.getStringExtra("caller_name") ?: "",
+                                        callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
+                                        calleeId = intent.getStringExtra("callee_id") ?: "",
+                                        calleeName = intent.getStringExtra("callee_name") ?: "",
+                                        calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
+                                        checksum = intent.getStringExtra("checksum") ?: "",
+                                    ),
+                                    callService = service
+                                )
+                            } else if (callType == "outgoing_sip") {
+                                requestOutgoingCallSip(
+                                    callInfo = CallSipInfo(
+                                        callerId = intent.getStringExtra("caller_id") ?: "",
+                                        callerName = intent.getStringExtra("caller_name") ?: "",
+                                        callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
+                                        destination = intent.getStringExtra("destination") ?: "",
+                                    ),
+                                    callService = service
+                                )
+                            }
                         }
                     }
 
@@ -265,9 +294,8 @@ class ScreenCallActivity :
         }
     }
 
-    private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
+    private suspend fun requestOutgoingCallSip(callInfo: CallSipInfo, callService: CiCareCallService) {
         if (!checkInternetConnection()) {
-            Log.i("SDK CALL", "NO INTERNET")
             callEventListener?.onError(100, "No internet connection")
             onNetworkError(
                 state = (metaData["call_failed_no_connection"]
@@ -276,26 +304,20 @@ class ScreenCallActivity :
         } else {
             try {
                 isOutgoingCall = true
-                when (val result = CallRepository.requestCall(
-                    CallRequest(
+                when (val result = CallRepository.requestCallSip(
+                    CallSipRequest(
                         callerId = callInfo.callerId,
                         callerName = callInfo.callerName,
                         callerAvatar = callInfo.callerAvatar,
-                        calleeId = callInfo.calleeId,
-                        calleeName = callInfo.calleeName,
-                        calleeAvatar = callInfo.calleeAvatar,
-                        checkSum = callInfo.checksum,
+                        destination = callInfo.destination,
                     )
                 )) {
                     is CallResult.Success -> {
                         val apiResponse = result.data
-                        Log.e("SDK CALL", "Success: $apiResponse")
                         callService.initCall(apiResponse.server, apiResponse.token)
-                        Log.i("SDK Call", apiResponse.callee)
                     }
 
                     is CallResult.Failure -> {
-                        Log.e("SDK CALL", "Error: ${result.error.code} - ${result.error.message}")
                         if (result.error.code == 400) {
                             val c = JSONObject(result.error.message)
                             if (c.get("code") == 3) {
@@ -326,7 +348,6 @@ class ScreenCallActivity :
                     }
                 }
             } catch (e: Exception) {
-                Log.e("SDK CALL", "Error: ${e.message}")
                 callEventListener?.onError(500,
                     "Call failed due to system error"
                 )
@@ -335,9 +356,76 @@ class ScreenCallActivity :
                         ?: "Call failed due to system error") as String,
                     systemError = true
                 )
-                Log.e("SDK CALL", "Error: ${e.cause} ${e.message}")
             }
+        }
+    }
 
+    private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
+        if (!checkInternetConnection()) {
+            callEventListener?.onError(100, "No internet connection")
+            onNetworkError(
+                state = (metaData["call_failed_no_connection"]
+                    ?: "No internet connection") as String, systemError = false
+            )
+        } else {
+            try {
+                isOutgoingCall = true
+                when (val result = CallRepository.requestCall(
+                    CallRequest(
+                        callerId = callInfo.callerId,
+                        callerName = callInfo.callerName,
+                        callerAvatar = callInfo.callerAvatar,
+                        calleeId = callInfo.calleeId,
+                        calleeName = callInfo.calleeName,
+                        calleeAvatar = callInfo.calleeAvatar,
+                        checkSum = callInfo.checksum,
+                    )
+                )) {
+                    is CallResult.Success -> {
+                        val apiResponse = result.data
+                        callService.initCall(apiResponse.server, apiResponse.token)
+                    }
+
+                    is CallResult.Failure -> {
+                        if (result.error.code == 400) {
+                            val c = JSONObject(result.error.message)
+                            if (c.get("code") == 3) {
+                                callEventListener?.onError(c.get("code") as Int,
+                                    c.get("message") as String
+                                )
+                                this.onNetworkError(
+                                    state = (metaData[c.get("message")]
+                                        ?: c.get("message")) as String,
+                                    systemError = false
+                                )
+                            } else {
+                                callEventListener?.onError(500,
+                                    "Call failed due to system error"
+                                )
+                            }
+                        } else {
+                            val c = JSONObject(result.error.message)
+                            callEventListener?.onError(result.error.code,
+                                c.get("message") as String
+                            )
+                            this.onNetworkError(
+                                state = (metaData["call_failed_api"]
+                                    ?: "Call failed due to system error") as String,
+                                systemError = true
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                callEventListener?.onError(500,
+                    "Call failed due to system error"
+                )
+                this.onNetworkError(
+                    state = (metaData["call_failed_api"]
+                        ?: "Call failed due to system error") as String,
+                    systemError = true
+                )
+            }
         }
     }
 
@@ -453,45 +541,45 @@ class ScreenCallActivity :
 //    }
 
     private val requiredPermissions = arrayOf(
-        android.Manifest.permission.RECORD_AUDIO,
+        Manifest.permission.RECORD_AUDIO,
         //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.P)
     private val requiredPermissions28 = arrayOf(
-        android.Manifest.permission.RECORD_AUDIO,
-        android.Manifest.permission.FOREGROUND_SERVICE,
+        Manifest.permission.RECORD_AUDIO,
+        Manifest.permission.FOREGROUND_SERVICE,
         //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private val requiredPermissionsTirmaisu = arrayOf(
-        android.Manifest.permission.RECORD_AUDIO,
-        android.Manifest.permission.FOREGROUND_SERVICE,
+        Manifest.permission.RECORD_AUDIO,
+        Manifest.permission.FOREGROUND_SERVICE,
         //android.Manifest.permission.POST_NOTIFICATIONS,
         //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private val requiredPermissionsUpsideDownCake = arrayOf(
-        android.Manifest.permission.RECORD_AUDIO,
-        android.Manifest.permission.FOREGROUND_SERVICE,
+        Manifest.permission.RECORD_AUDIO,
+        Manifest.permission.FOREGROUND_SERVICE,
         //android.Manifest.permission.POST_NOTIFICATIONS,
         //android.Manifest.permission.READ_PHONE_STATE,
-        android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
-        android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
+        Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
+        Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
     )
 
-    fun isForegroundMicPermissionGranted(): Boolean {
+    private fun isForegroundMicPermissionGranted(): Boolean {
         val recordAudioGranted = ContextCompat.checkSelfPermission(
             this,
-            android.Manifest.permission.RECORD_AUDIO
+            Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
 
         val fgMicGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ContextCompat.checkSelfPermission(
                 this,
-                android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
+                Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
             ) == PackageManager.PERMISSION_GRANTED
         } else {
             true
@@ -529,13 +617,13 @@ class ScreenCallActivity :
         launcher.launch(notGranted.toTypedArray())
     }
 
+    @SuppressLint("SourceLockedOrientationActivity")
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         networkObserver = NetworkObserver(this) { isConnected ->
-            if (isConnected) {
-            } else {
+            if (!isConnected) {
                 callEventListener?.onError(100, "No internet connection")
                 onNetworkError(
                     state = (metaData["call_failed_no_connection"]
@@ -544,7 +632,7 @@ class ScreenCallActivity :
             }
         }
 
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         checkAndRequestPermissions {
             permissionGranted = it
@@ -675,10 +763,6 @@ class ScreenCallActivity :
                         isSpeakerOn = !isSpeakerOn
                         callService?.setSpeaker(isSpeakerOn)
                     },
-                    onMessageClick = {
-                        listener?.onShowMessagePage()
-                        hangup()
-                    },
                     onAnswerCallClick = {
                         answer()
                     },
@@ -687,13 +771,17 @@ class ScreenCallActivity :
                             incomingService?.reject()
                         } else {
                             if (callStatusRaw == "calling" || callStatusRaw == "connecting"
-                                || callStatusRaw == "ringing") {
+                                || callStatusRaw == "ringing"
+                            ) {
                                 callService?.cancelCall()
                             } else {
                                 hangup()
                             }
                         }
                         finish()
+                    },
+                    onNumpadClick = {
+                        callService?.sendDTMF(it)
                     },
                 )
                 ErrorAlertDialog(
@@ -807,10 +895,10 @@ class ScreenCallActivity :
 
     override fun onSignalStateChanged(state: String) {
         if (state == "") return
-        if (callService?.callState == MutableStateFlow("connected")) {
-            connectionState = if (state == "connected") "" else state
+        connectionState = if (callService?.callState == MutableStateFlow("connected")) {
+            if (state == "connected") "" else state
         } else {
-            connectionState = state
+            state
         }
         if (connectionState == "lost") {
             hangup()
@@ -843,10 +931,20 @@ fun CallScreen(
     metaData: Map<String, String>,
     onMuteClick: () -> Unit,
     onSpeakerClick: () -> Unit,
-    onMessageClick: () -> Unit,
+    onNumpadClick: (it: String) -> Unit,
     onAnswerCallClick: () -> Unit,
     onEndCallClick: () -> Unit
 ) {
+    var showDialPad by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler {
+        if (showDialPad) {
+            showDialPad = false
+        } else {
+
+        }
+    }
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -860,108 +958,132 @@ fun CallScreen(
                 .fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(modifier = Modifier.height(20.dp))
-                Text(
-                    text = metaData["call_title"] ?: "Free Call",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-
-                Spacer(modifier = Modifier.height(60.dp))
-            }
-
-            // Avatar
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = metaData["call_title"] ?: "Free Call",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+
+                    Spacer(modifier = Modifier.height(60.dp))
+                }
+
+                // Avatar
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+
+                        Text(text = callTimer as String, style = MaterialTheme.typography.bodyLarge)
+                        Spacer(modifier = Modifier.height(55.dp))
+                        CallAvatar(avatarUrl)
+                        Spacer(modifier = Modifier.height(35.dp))
+
+                        Text(text = if (metaData["call_name_title"]?.isBlank() == true)
+                            callerName else metaData["call_name_title"] ?: callerName, style = MaterialTheme.typography.headlineSmall)
+                        Spacer(modifier = Modifier.height(15.dp))
+                        Text(
+                            text = metaData[signalState] ?: signalState, // ->status network
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Red
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                //
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RoundIconButton(
+                        icon = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else {
+                            if (isOnBluetooth) SpeakerBluetooth
+                            else Icons.AutoMirrored.Outlined.VolumeUp
+                        },
+                        label = metaData["call_btn_speaker"] ?: "Speaker",
+                        onClick = onSpeakerClick,
+                        backgroundColor = if (isSpeakerOn) Color(0xFF00BABD) else Color(0xFFE9F8F9),
+                        iconTint = if (isSpeakerOn) Color.White else Color(0xFF17666A),
+                        enabled = callStatusRaw.lowercase() != "ended"
+                    )
+
+                    RoundIconButton(
+                        icon = Icons.Filled.Dialpad,
+                        label = metaData["call_numpad"] ?: "Numpad",
+                        onClick = { showDialPad = true },
+                        backgroundColor = Color(0xFFE9F8F9),
+                        iconTint = Color(0xFF17666A),
+                        enabled = callStatusRaw.lowercase() == "connected"
+                    )
+
+                    RoundIconButton(
+                        icon = Icons.Default.MicOff,
+                        label = metaData["call_btn_mute"] ?: "Mute",
+                        onClick = onMuteClick,
+                        backgroundColor = if (isMicMuted) Color(0xFF00BABD) else Color(0xFFE9F8F9),
+                        iconTint = if (isMicMuted) Color.White else Color(0xFF17666A),
+                        enabled = callStatusRaw.lowercase() == "connected"
+                    )
+
+    //                if (callStatusRaw.lowercase() == "incoming") {
+    //                    RoundIconButton(
+    //                        icon = Icons.AutoMirrored.Outlined.Chat,
+    //                        label = metaData["call_btn_message"] ?: "Message",
+    //                        onClick = onMessageClick,
+    //                        backgroundColor = Color(0xFFE9F8F9),
+    //                        iconTint = Color(0xFF17666A),
+    //                    )
+    //                }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 55.dp)
                 ) {
 
-                    Text(text = callTimer as String, style = MaterialTheme.typography.bodyLarge)
-                    Spacer(modifier = Modifier.height(55.dp))
-                    CallAvatar(avatarUrl)
-                    Spacer(modifier = Modifier.height(35.dp))
-
-                    Text(text = if (metaData["call_name_title"]?.isBlank() == true)
-                        callerName else metaData["call_name_title"] ?: callerName, style = MaterialTheme.typography.headlineSmall)
-                    Spacer(modifier = Modifier.height(15.dp))
-                    Text(
-                        text = metaData[signalState] ?: signalState, // ->status network
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Red
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-
-            //
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp, vertical = 15.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RoundIconButton(
-                    icon = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else {
-                        if (isOnBluetooth) SpeakerBluetooth
-                        else Icons.AutoMirrored.Outlined.VolumeUp
-                    },
-                    label = metaData["call_btn_speaker"] ?: "Speaker",
-                    onClick = onSpeakerClick,
-                    backgroundColor = if (isSpeakerOn) Color(0xFF00BABD) else Color(0xFFE9F8F9),
-                    iconTint = if (isSpeakerOn) Color.White else Color(0xFF17666A),
-                    enabled = callStatusRaw.lowercase() != "ended"
-                )
-
-                RoundIconButton(
-                    icon = Icons.Default.MicOff,
-                    label = metaData["call_btn_mute"] ?: "Mute",
-                    onClick = onMuteClick,
-                    backgroundColor = if (isMicMuted) Color(0xFF00BABD) else Color(0xFFE9F8F9),
-                    iconTint = if (isMicMuted) Color.White else Color(0xFF17666A),
-                    enabled = callStatusRaw.lowercase() == "connected"
-                )
-
-//                if (callStatusRaw.lowercase() == "incoming") {
-//                    RoundIconButton(
-//                        icon = Icons.AutoMirrored.Outlined.Chat,
-//                        label = metaData["call_btn_message"] ?: "Message",
-//                        onClick = onMessageClick,
-//                        backgroundColor = Color(0xFFE9F8F9),
-//                        iconTint = Color(0xFF17666A),
-//                    )
-//                }
-            }
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 55.dp)
-            ) {
-
-                RoundIconButton(
-                    icon = Icons.Filled.Close,
-                    label = "",
-                    onClick = onEndCallClick,
-                    backgroundColor = Color.Red,
-                    iconTint = Color.White,
-                    enabled = callStatusRaw.lowercase() != "ended"
-                )
-                if (callStatusRaw.lowercase() == "incoming") {
-                    Spacer(modifier = Modifier.width(160.dp))
                     RoundIconButton(
-                        icon = Icons.Default.Phone,
+                        icon = Icons.Filled.Close,
                         label = "",
-                        onClick = onAnswerCallClick,
-                        backgroundColor = Color.Green,
+                        onClick = onEndCallClick,
+                        backgroundColor = Color.Red,
                         iconTint = Color.White,
+                        enabled = callStatusRaw.lowercase() != "ended"
+                    )
+                    if (callStatusRaw.lowercase() == "incoming") {
+                        Spacer(modifier = Modifier.width(160.dp))
+                        RoundIconButton(
+                            icon = Icons.Default.Phone,
+                            label = "",
+                            onClick = onAnswerCallClick,
+                            backgroundColor = Color.Green,
+                            iconTint = Color.White,
+                        )
+                    }
+                }
+            }
+            AnimatedVisibility (
+                visible = showDialPad,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+                modifier = Modifier
+                    .fillMaxWidth().zIndex(2f).align(Alignment.BottomCenter)
+            ) {
+
+                Surface(tonalElevation = 8.dp) {
+                    DialPad(
+                        onKeyPress = { digit ->
+                            onNumpadClick(digit)
+                        }
                     )
                 }
             }
-            //}
-        }
         }
     }
 }
@@ -1121,10 +1243,10 @@ fun DefaultPreview() {
         onEndCallClick = {},
         onAnswerCallClick = {},
         onSpeakerClick = {},
-        onMessageClick = {}
+        onNumpadClick = {}
     )
         ErrorAlertDialog(
-            showDialog = true,
+            showDialog = false,
             onDismiss = {
             },
             withIcon = true,

@@ -168,6 +168,32 @@ class WebRTCManager(
         }
     }
 
+    fun setDTMF(
+        digits: String,
+        durationMs: Int = 160,
+        interToneGapMs: Int = 70
+    ): Boolean {
+        val pc = peerConnection ?: return false
+
+        return try {
+            val audioSender = pc.senders?.firstOrNull { sender ->
+                sender.track() is AudioTrack
+            }
+            val dtmfSender = audioSender?.dtmf()
+            if (dtmfSender == null || !dtmfSender.canInsertDtmf()) {
+                Log.w("WebRTC", "DTMF not supported on this PeerConnection")
+                return false
+            }
+
+            dtmfSender.insertDtmf(digits, durationMs, interToneGapMs)
+            Log.d("WebRTC", "DTMF sent: $digits")
+            true
+        } catch (e: Exception) {
+            Log.e("WebRTC", "Failed to send DTMF: ${e.message}")
+            false
+        }
+    }
+
     fun setRemoteDescription(sdp: SessionDescription?) {
         sdp?.let {
             peerConnection?.setRemoteDescription(object : SdpObserverAdapter() {

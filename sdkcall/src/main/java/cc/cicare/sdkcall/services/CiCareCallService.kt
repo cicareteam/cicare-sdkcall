@@ -241,6 +241,10 @@ class CiCareCallService:
 
     fun getCallStateFlow(): StateFlow<String> = callState
 
+    fun sendDTMF(digits: String) {
+        webRTCManager.setDTMF(digits)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isClosed = false
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -403,7 +407,6 @@ fun hangup() {
     }
 
     suspend fun initCall(server: String, token: String) {
-        Log.i("SDK CALL", "init call service")
         webRTCManager.init()
         webRTCManager.initMic()
         socketManager.connect(server, token)

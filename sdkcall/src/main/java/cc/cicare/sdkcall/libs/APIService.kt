@@ -20,6 +20,13 @@ data class CallRequest(
     val checkSum: String,
 )
 
+data class CallSipRequest(
+    val callerId: String,
+    val callerName: String,
+    val callerAvatar: String,
+    val destination: String,
+)
+
 data class CallResponse(
     @SerializedName("token")
     val token: String,
@@ -41,6 +48,9 @@ sealed class CallResult {
 interface ApiService {
     @POST("api/sdk-call/one2one")
     suspend fun requestCall(@Body request: CallRequest): Response<CallResponse>
+
+    @POST("api/sdk-call/app2phone")
+    suspend fun requestCallSip(@Body request: CallSipRequest): Response<CallResponse>
 }
 
 object ApiClient {
@@ -82,6 +92,23 @@ object CallRepository {
     suspend fun requestCall(request: CallRequest): CallResult {
         return try {
             val response = ApiClient.api.requestCall(request)
+            if (response.isSuccessful && response.body() != null) {
+                CallResult.Success(response.body()!!)
+            } else {
+                CallResult.Failure(
+                    Error(
+                        code = response.code(),
+                        message = response.errorBody()?.string() ?: "Unknown error"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            CallResult.Failure(Error(code = -1, message = e.localizedMessage ?: "Unexpected error"))
+        }
+    }
+    suspend fun requestCallSip(request: CallSipRequest): CallResult {
+        return try {
+            val response = ApiClient.api.requestCallSip(request)
             if (response.isSuccessful && response.body() != null) {
                 CallResult.Success(response.body()!!)
             } else {

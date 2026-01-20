@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity(), CallEventListener {
 
 
         CiCareSdkCall.setAPI(
-            "https://gsm-sdk.c-icare.cc:8443",
+            "https://sdk-gateway.c-icare.cc",
             "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
         val uri = Uri.parse("android.resource://${this.packageName}/${cc.cicare.sdkcall.R.raw.miremix}")
@@ -205,6 +205,9 @@ fun ContentView(
             currentUserId = currentUserId,
             username = username,
             activity = activity,
+            onHelpCall = {
+                makeSipCall(activity, currentUserId, username)
+            },
             onLogout = {
                 FirebaseInstallations.getInstance().delete()
                 prefs.edit { clear() }
@@ -306,6 +309,7 @@ fun CallView(
     currentUserId: Int,
     activity: ComponentActivity,
     username: String,
+    onHelpCall: () -> Unit,
     onLogout: () -> Unit
 ) {
     var users by remember { mutableStateOf(listOf<User>()) }
@@ -322,6 +326,9 @@ fun CallView(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("Welcome, $username", style = MaterialTheme.typography.bodyLarge)
+            Button(onClick = onHelpCall, colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.secondary)) {
+                Text("Help")
+            }
             Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.error)) {
                 Text("Logout")
             }
@@ -429,6 +436,23 @@ suspend fun fetchUsers(currentUserId: Int): List<User> = withContext(Dispatchers
     } catch (e: Exception) {
         emptyList()
     }
+}
+
+fun makeSipCall( activity: ComponentActivity, currentUserId: Int, username: String) {
+    CiCareSdkCall.makeCallSip(
+        activity = activity,
+        callerId = currentUserId.toString(),
+        callerName = username,
+        callerAvatar = "https://avatar.iran.liara.run/public/boy",
+        destination = "98909",
+        destinationName = "Call Center",
+        destinationAvatar = "https://avatar.iran.liara.run/public/boy",
+        checkSum = "asdfasdf",
+        metaData = mapOf(
+            "call_title" to "Free Call",
+            "call_not_found" to "Call not found"
+        )
+    )
 }
 
 fun makeCall( activity: ComponentActivity, currentUserId: Int, username: String, user: User) {
