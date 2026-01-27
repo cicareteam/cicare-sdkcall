@@ -259,7 +259,7 @@ object CiCareSdkCall {
         }
     }
 
-    fun makeCallSip(
+    /*fun makeCallSip(
         activity: ComponentActivity,
         callerId: String,
         callerName: String? = "Caller",
@@ -296,5 +296,5 @@ object CiCareSdkCall {
                 MessageListenerHolder.callEventListener?.onError(101, "Permisssion not granted")
             }
         }
-    }
+    }*/
 }

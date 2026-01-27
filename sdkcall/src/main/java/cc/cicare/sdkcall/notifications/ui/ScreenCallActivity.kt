@@ -1,18 +1,19 @@
 package cc.cicare.sdkcall.notifications.ui
 
-import android.Manifest
 import android.annotation.SuppressLint
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.*
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -21,17 +22,12 @@ import android.os.Looper
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,21 +45,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,7 +67,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -82,23 +75,23 @@ import cc.cicare.sdkcall.event.CallEventListener
 import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
 import cc.cicare.sdkcall.event.ConnectionStateListener
+import cc.cicare.sdkcall.event.MessageActionListener
 import cc.cicare.sdkcall.event.MessageListenerHolder
 import cc.cicare.sdkcall.libs.CallRepository
 import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.libs.CallResult
-import cc.cicare.sdkcall.libs.CallSipRequest
 import cc.cicare.sdkcall.notifications.ui.icons.SpeakerBluetooth
 import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
-import cc.cicare.sdkcall.ui.DialPad
 import cc.cicare.sdkcall.utils.NetworkObserver
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import org.webrtc.PeerConnection
 import kotlin.collections.HashMap
+import kotlin.coroutines.resume
 
 data class CallInfo (
     val callerId: String,
@@ -109,14 +102,6 @@ data class CallInfo (
     val calleeAvatar: String,
     val checksum: String,
 )
-
-data class CallSipInfo (
-    val callerId: String,
-    val callerName: String,
-    val callerAvatar: String,
-    val destination: String,
-)
-
 class ScreenCallActivity :
     ComponentActivity(),
     CallStateListener,
@@ -144,9 +129,9 @@ class ScreenCallActivity :
     private var isSpeakerOn by mutableStateOf(false)
     private var isOnBluetooth by mutableStateOf(false)
 
-    /*private val listener: MessageActionListener?
+    private val listener: MessageActionListener?
         get() = MessageListenerHolder.listener
-*/
+
     private val callEventListener: CallEventListener?
         get() = MessageListenerHolder.callEventListener
 
@@ -252,32 +237,18 @@ class ScreenCallActivity :
                     CiCareCallService.ACTION.OUTGOING -> lifecycleScope.launch {
                         if (permissionGranted) {
                             Log.i("SDK CALL", "OUTGOING GRANTED")
-                            val callType = intent.getStringExtra("call_type") ?: "outgoing"
-
-                            if (callType == "outgoing") {
-                                requestOutgoingCall(
-                                    callInfo = CallInfo(
-                                        callerId = intent.getStringExtra("caller_id") ?: "",
-                                        callerName = intent.getStringExtra("caller_name") ?: "",
-                                        callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
-                                        calleeId = intent.getStringExtra("callee_id") ?: "",
-                                        calleeName = intent.getStringExtra("callee_name") ?: "",
-                                        calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
-                                        checksum = intent.getStringExtra("checksum") ?: "",
-                                    ),
-                                    callService = service
-                                )
-                            } else if (callType == "outgoing_sip") {
-                                requestOutgoingCallSip(
-                                    callInfo = CallSipInfo(
-                                        callerId = intent.getStringExtra("caller_id") ?: "",
-                                        callerName = intent.getStringExtra("caller_name") ?: "",
-                                        callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
-                                        destination = intent.getStringExtra("destination") ?: "",
-                                    ),
-                                    callService = service
-                                )
-                            }
+                            requestOutgoingCall(
+                                callInfo = CallInfo(
+                                    callerId = intent.getStringExtra("caller_id") ?: "",
+                                    callerName = intent.getStringExtra("caller_name") ?: "",
+                                    callerAvatar = intent.getStringExtra("caller_avatar") ?: "",
+                                    calleeId = intent.getStringExtra("callee_id") ?: "",
+                                    calleeName = intent.getStringExtra("callee_name") ?: "",
+                                    calleeAvatar = intent.getStringExtra("callee_avatar") ?: "",
+                                    checksum = intent.getStringExtra("checksum") ?: "",
+                                ),
+                                callService = service
+                            )
                         }
                     }
 
@@ -294,74 +265,9 @@ class ScreenCallActivity :
         }
     }
 
-    private suspend fun requestOutgoingCallSip(callInfo: CallSipInfo, callService: CiCareCallService) {
-        if (!checkInternetConnection()) {
-            callEventListener?.onError(100, "No internet connection")
-            onNetworkError(
-                state = (metaData["call_failed_no_connection"]
-                    ?: "No internet connection") as String, systemError = false
-            )
-        } else {
-            try {
-                isOutgoingCall = true
-                when (val result = CallRepository.requestCallSip(
-                    CallSipRequest(
-                        callerId = callInfo.callerId,
-                        callerName = callInfo.callerName,
-                        callerAvatar = callInfo.callerAvatar,
-                        destination = callInfo.destination,
-                    )
-                )) {
-                    is CallResult.Success -> {
-                        val apiResponse = result.data
-                        callService.initCall(apiResponse.server, apiResponse.token)
-                    }
-
-                    is CallResult.Failure -> {
-                        if (result.error.code == 400) {
-                            val c = JSONObject(result.error.message)
-                            if (c.get("code") == 3) {
-                                callEventListener?.onError(c.get("code") as Int,
-                                    c.get("message") as String
-                                )
-                                this.onNetworkError(
-                                    state = (metaData[c.get("message")]
-                                        ?: c.get("message")) as String,
-                                    systemError = false
-                                )
-                            } else {
-                                callEventListener?.onError(500,
-                                    "Call failed due to system error"
-                                )
-                            }
-                        } else {
-                            val c = JSONObject(result.error.message)
-                            callEventListener?.onError(result.error.code,
-                                c.get("message") as String
-                            )
-                            this.onNetworkError(
-                                state = (metaData["call_failed_api"]
-                                    ?: "Call failed due to system error") as String,
-                                systemError = true
-                            )
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                callEventListener?.onError(500,
-                    "Call failed due to system error"
-                )
-                this.onNetworkError(
-                    state = (metaData["call_failed_api"]
-                        ?: "Call failed due to system error") as String,
-                    systemError = true
-                )
-            }
-        }
-    }
-
     private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
         if (!checkInternetConnection()) {
+            Log.i("SDK CALL", "NO INTERNET")
             callEventListener?.onError(100, "No internet connection")
             onNetworkError(
                 state = (metaData["call_failed_no_connection"]
@@ -383,10 +289,13 @@ class ScreenCallActivity :
                 )) {
                     is CallResult.Success -> {
                         val apiResponse = result.data
+                        Log.e("SDK CALL", "Success: $apiResponse")
                         callService.initCall(apiResponse.server, apiResponse.token)
+                        Log.i("SDK Call", apiResponse.callee)
                     }
 
                     is CallResult.Failure -> {
+                        Log.e("SDK CALL", "Error: ${result.error.code} - ${result.error.message}")
                         if (result.error.code == 400) {
                             val c = JSONObject(result.error.message)
                             if (c.get("code") == 3) {
@@ -417,6 +326,7 @@ class ScreenCallActivity :
                     }
                 }
             } catch (e: Exception) {
+                Log.e("SDK CALL", "Error: ${e.message}")
                 callEventListener?.onError(500,
                     "Call failed due to system error"
                 )
@@ -425,7 +335,9 @@ class ScreenCallActivity :
                         ?: "Call failed due to system error") as String,
                     systemError = true
                 )
+                Log.e("SDK CALL", "Error: ${e.cause} ${e.message}")
             }
+
         }
     }
 
@@ -541,45 +453,45 @@ class ScreenCallActivity :
 //    }
 
     private val requiredPermissions = arrayOf(
-        Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.RECORD_AUDIO,
         //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.P)
     private val requiredPermissions28 = arrayOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.FOREGROUND_SERVICE,
         //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private val requiredPermissionsTirmaisu = arrayOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.FOREGROUND_SERVICE,
         //android.Manifest.permission.POST_NOTIFICATIONS,
         //android.Manifest.permission.READ_PHONE_STATE,
     )
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private val requiredPermissionsUpsideDownCake = arrayOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE,
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.FOREGROUND_SERVICE,
         //android.Manifest.permission.POST_NOTIFICATIONS,
         //android.Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
-        Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
+        android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
+        android.Manifest.permission.FOREGROUND_SERVICE_PHONE_CALL
     )
 
-    private fun isForegroundMicPermissionGranted(): Boolean {
+    fun isForegroundMicPermissionGranted(): Boolean {
         val recordAudioGranted = ContextCompat.checkSelfPermission(
             this,
-            Manifest.permission.RECORD_AUDIO
+            android.Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
 
         val fgMicGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ContextCompat.checkSelfPermission(
                 this,
-                Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
+                android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
             ) == PackageManager.PERMISSION_GRANTED
         } else {
             true
@@ -617,13 +529,13 @@ class ScreenCallActivity :
         launcher.launch(notGranted.toTypedArray())
     }
 
-    @SuppressLint("SourceLockedOrientationActivity")
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         networkObserver = NetworkObserver(this) { isConnected ->
-            if (!isConnected) {
+            if (isConnected) {
+            } else {
                 callEventListener?.onError(100, "No internet connection")
                 onNetworkError(
                     state = (metaData["call_failed_no_connection"]
@@ -632,7 +544,7 @@ class ScreenCallActivity :
             }
         }
 
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 
         checkAndRequestPermissions {
             permissionGranted = it
@@ -763,6 +675,10 @@ class ScreenCallActivity :
                         isSpeakerOn = !isSpeakerOn
                         callService?.setSpeaker(isSpeakerOn)
                     },
+                    onMessageClick = {
+                        listener?.onShowMessagePage()
+                        hangup()
+                    },
                     onAnswerCallClick = {
                         answer()
                     },
@@ -771,17 +687,13 @@ class ScreenCallActivity :
                             incomingService?.reject()
                         } else {
                             if (callStatusRaw == "calling" || callStatusRaw == "connecting"
-                                || callStatusRaw == "ringing"
-                            ) {
+                                || callStatusRaw == "ringing") {
                                 callService?.cancelCall()
                             } else {
                                 hangup()
                             }
                         }
                         finish()
-                    },
-                    onNumpadClick = {
-                        callService?.sendDTMF(it)
                     },
                 )
                 ErrorAlertDialog(
@@ -895,10 +807,10 @@ class ScreenCallActivity :
 
     override fun onSignalStateChanged(state: String) {
         if (state == "") return
-        connectionState = if (callService?.callState == MutableStateFlow("connected")) {
-            if (state == "connected") "" else state
+        if (callService?.callState == MutableStateFlow("connected")) {
+            connectionState = if (state == "connected") "" else state
         } else {
-            state
+            connectionState = state
         }
         if (connectionState == "lost") {
             hangup()
@@ -931,20 +843,10 @@ fun CallScreen(
     metaData: Map<String, String>,
     onMuteClick: () -> Unit,
     onSpeakerClick: () -> Unit,
-    onNumpadClick: (it: String) -> Unit,
+    onMessageClick: () -> Unit,
     onAnswerCallClick: () -> Unit,
     onEndCallClick: () -> Unit
 ) {
-    var showDialPad by rememberSaveable { mutableStateOf(false) }
-
-    BackHandler {
-        if (showDialPad) {
-            showDialPad = false
-        } else {
-
-        }
-    }
-
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -953,11 +855,11 @@ fun CallScreen(
             MultiLayerGradientBackground()
 
             Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(modifier = Modifier.height(20.dp))
@@ -998,7 +900,7 @@ fun CallScreen(
                 //
                 Row(
                     horizontalArrangement = Arrangement.SpaceBetween,
-                      modifier = Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 32.dp, vertical = 15.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1016,15 +918,6 @@ fun CallScreen(
                     )
 
                     RoundIconButton(
-                        icon = Icons.Filled.Dialpad,
-                        label = metaData["call_numpad"] ?: "Numpad",
-                        onClick = { showDialPad = true },
-                        backgroundColor = Color(0xFFE9F8F9),
-                        iconTint = Color(0xFF17666A),
-                        enabled = callStatusRaw.lowercase() == "connected"
-                    )
-
-                    RoundIconButton(
                         icon = Icons.Default.MicOff,
                         label = metaData["call_btn_mute"] ?: "Mute",
                         onClick = onMuteClick,
@@ -1033,15 +926,15 @@ fun CallScreen(
                         enabled = callStatusRaw.lowercase() == "connected"
                     )
 
-    //                if (callStatusRaw.lowercase() == "incoming") {
-    //                    RoundIconButton(
-    //                        icon = Icons.AutoMirrored.Outlined.Chat,
-    //                        label = metaData["call_btn_message"] ?: "Message",
-    //                        onClick = onMessageClick,
-    //                        backgroundColor = Color(0xFFE9F8F9),
-    //                        iconTint = Color(0xFF17666A),
-    //                    )
-    //                }
+//                if (callStatusRaw.lowercase() == "incoming") {
+//                    RoundIconButton(
+//                        icon = Icons.AutoMirrored.Outlined.Chat,
+//                        label = metaData["call_btn_message"] ?: "Message",
+//                        onClick = onMessageClick,
+//                        backgroundColor = Color(0xFFE9F8F9),
+//                        iconTint = Color(0xFF17666A),
+//                    )
+//                }
                 }
                 Row(
                     horizontalArrangement = Arrangement.Center,
@@ -1067,22 +960,7 @@ fun CallScreen(
                         )
                     }
                 }
-            }
-            AnimatedVisibility (
-                visible = showDialPad,
-                enter = slideInVertically { it } + fadeIn(),
-                exit = slideOutVertically { it } + fadeOut(),
-                modifier = Modifier
-                    .fillMaxWidth().zIndex(2f).align(Alignment.BottomCenter)
-            ) {
-
-                Surface(tonalElevation = 8.dp) {
-                    DialPad(
-                        onKeyPress = { digit ->
-                            onNumpadClick(digit)
-                        }
-                    )
-                }
+                //}
             }
         }
     }
@@ -1229,24 +1107,24 @@ fun DefaultPreview() {
         "phone_speaker" to "Phone Speaker",
     )
     Box(modifier = Modifier.fillMaxSize()) {
-    CallScreen(
-        "Driver Andhi",
-        "",
-        "connected",
-        signalState = "call_lost_connection",
-        "",
-        isMicMuted = true,
-        isSpeakerOn = false,
-        isOnBluetooth = true,
-        metaData = metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
-        onMuteClick = {},
-        onEndCallClick = {},
-        onAnswerCallClick = {},
-        onSpeakerClick = {},
-        onNumpadClick = {}
-    )
+        CallScreen(
+            "Driver Andhi",
+            "",
+            "connected",
+            signalState = "call_lost_connection",
+            "",
+            isMicMuted = true,
+            isSpeakerOn = false,
+            isOnBluetooth = true,
+            metaData = metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
+            onMuteClick = {},
+            onEndCallClick = {},
+            onAnswerCallClick = {},
+            onSpeakerClick = {},
+            onMessageClick = {}
+        )
         ErrorAlertDialog(
-            showDialog = false,
+            showDialog = true,
             onDismiss = {
             },
             withIcon = true,

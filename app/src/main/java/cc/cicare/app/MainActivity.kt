@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity(), CallEventListener {
 
 
         CiCareSdkCall.setAPI(
-            "https://sdk-gateway.c-icare.cc",
+            "https://gsm-sdk.c-icare.cc",
             "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
         val uri = Uri.parse("android.resource://${this.packageName}/${cc.cicare.sdkcall.R.raw.miremix}")
@@ -439,7 +439,7 @@ suspend fun fetchUsers(currentUserId: Int): List<User> = withContext(Dispatchers
 }
 
 fun makeSipCall( activity: ComponentActivity, currentUserId: Int, username: String) {
-    CiCareSdkCall.makeCallSip(
+/*    CiCareSdkCall.makeCallSip(
         activity = activity,
         callerId = currentUserId.toString(),
         callerName = username,
@@ -452,7 +452,7 @@ fun makeSipCall( activity: ComponentActivity, currentUserId: Int, username: Stri
             "call_title" to "Free Call",
             "call_not_found" to "Call not found"
         )
-    )
+    )*/
 }
 
 fun makeCall( activity: ComponentActivity, currentUserId: Int, username: String, user: User) {
