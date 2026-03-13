@@ -7,6 +7,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -18,17 +20,19 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import cc.cicare.sdkcall.R
-import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.CallState
+import cc.cicare.sdkcall.event.CallStateListener
 import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.notifications.CallNotificationManager
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.rtc.WebRTCEventCallback
 import cc.cicare.sdkcall.rtc.WebRTCManager
 import cc.cicare.sdkcall.signaling.SocketManager
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,17 +46,13 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
-import java.util.Locale
 
 interface TimeTickerListener {
     fun onTimeTicketUpdate(seconds: Long)
 }
 
 @Suppress("DEPRECATION")
-class CiCareCallService:
-    Service(),
-    CallStateListener,
-    WebRTCEventCallback {
+class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
 
     private lateinit var webRTCManager: WebRTCManager
     private lateinit var socketManager: SocketManager
@@ -77,31 +77,30 @@ class CiCareCallService:
     var callState = MutableStateFlow("connecting")
 
     private var isClosed = false
+    private var keepNotificationOnStop = false
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
-
-
-    private var metaData: Map<String, String> = hashMapOf(
-        "call_busy" to "The customer is busy and cannot be reached",
-        "call_calling" to "Calling...",
-        "call_connecting" to "Connecting...",
-        "call_ringing" to "Ringing...",
-        "call_refused" to "Decline",
-        "call_end" to "End Call",
-        "call_incoming" to "Incoming",
-        "call_temporarily_unavailable" to "Currently unreachable",
-        "call_lost_connection" to "Connection lost",
-        "call_weak_signal" to "Weak Signal",
-        "call_name_title" to "Xanh SM Customer",
-        "call_btn_message" to "Send Message",
-        "call_btn_mute" to "Mute",
-        "call_btn_speaker" to "Speaker",
-        "call_failed_api" to "Call failed due to system error",
-        "call_failed_no_connection" to "No internet connection",
-    )
-
+    private var metaData: Map<String, String> =
+            hashMapOf(
+                    "call_busy" to "The customer is busy and cannot be reached",
+                    "call_calling" to "Calling...",
+                    "call_connecting" to "Connecting...",
+                    "call_ringing" to "Ringing...",
+                    "call_refused" to "Decline",
+                    "call_end" to "End Call",
+                    "call_incoming" to "Incoming",
+                    "call_temporarily_unavailable" to "Currently unreachable",
+                    "call_lost_connection" to "Connection lost",
+                    "call_weak_signal" to "Weak Signal",
+                    "call_name_title" to "Xanh SM Customer",
+                    "call_btn_message" to "Send Message",
+                    "call_btn_mute" to "Mute",
+                    "call_btn_speaker" to "Speaker",
+                    "call_failed_api" to "Call failed due to system error",
+                    "call_failed_no_connection" to "No internet connection",
+            )
 
     private val binder = LocalBinder()
 
@@ -116,12 +115,12 @@ class CiCareCallService:
         const val INCOMING = "INCOMING"
         const val ONGOING = "ONGOING"
         const val OUTGOING = "OUTGOING"
-//        const val MISSED_CALL = "MISSED_CALL"
-//        const val BUSY = "BUSY"
+        //        const val MISSED_CALL = "MISSED_CALL"
+        //        const val BUSY = "BUSY"
     }
 
     companion object {
-        //val CALL_CHANNEL_ID = "call_channel_id"
+        // val CALL_CHANNEL_ID = "call_channel_id"
         const val INCOMING_CALL_ICON = android.R.drawable.sym_call_incoming
         const val ONGOING_CALL_ICON = android.R.drawable.sym_action_call
         const val MISSED_CALL_ICON = android.R.drawable.sym_call_missed
@@ -148,48 +147,67 @@ class CiCareCallService:
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
+            val audioAttributes =
+                    AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
 
-            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(audioAttributes)
-                .setAcceptsDelayedFocusGain(false)
-                .setOnAudioFocusChangeListener { /* handle focus change */ }
-                .build()
+            val focusRequest =
+                    AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                            .setAudioAttributes(audioAttributes)
+                            .setAcceptsDelayedFocusGain(false)
+                            .setOnAudioFocusChangeListener { /* handle focus change */}
+                            .build()
 
             audioManager.requestAudioFocus(focusRequest)
         } else {
             audioManager.requestAudioFocus(
-                { focusChange ->
-
-                },
-                AudioManager.STREAM_VOICE_CALL,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                    { focusChange -> },
+                    AudioManager.STREAM_VOICE_CALL,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             )
         }
     }
 
     private var ringbackJob: Job? = null
     private var ringbackPlayer: MediaPlayer? = null
+    private var ringingTimeoutJob: Job? = null // Timer 30 detik untuk auto-hangup saat ringing
 
     fun playRingback(context: Context) {
         stopRingback() // pastikan tidak double
-        ringbackJob = CoroutineScope(Dispatchers.Main).launch {
-            while (isActive) {
-                ringbackPlayer = MediaPlayer.create(context, R.raw.tuut)
-                ringbackPlayer?.start()
-
-                // Tunggu sampai audio selesai main
-                delay(ringbackPlayer?.duration?.toLong() ?: 1000L)
-
-                // Hentikan player dan beri delay 3 detik sebelum ulang
-                ringbackPlayer?.release()
-                ringbackPlayer = null
-                delay(3000L) // delay antar "tuut"
-            }
-        }
+        ringbackJob =
+                CoroutineScope(Dispatchers.Main).launch {
+                    while (isActive) {
+                        try {
+                            val attr =
+                                    AudioAttributes.Builder()
+                                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                            .build()
+                            ringbackPlayer =
+                                    MediaPlayer().apply {
+                                        setAudioAttributes(attr)
+                                        val afd = context.resources.openRawResourceFd(R.raw.tuut)
+                                        setDataSource(
+                                                afd.fileDescriptor,
+                                                afd.startOffset,
+                                                afd.length
+                                        )
+                                        afd.close()
+                                        prepare()
+                                        start()
+                                    }
+                            delay(ringbackPlayer?.duration?.toLong() ?: 1000L)
+                            ringbackPlayer?.release()
+                            ringbackPlayer = null
+                            delay(3000L)
+                        } catch (e: Exception) {
+                            Log.e("SDK CALL", "Failed to play ringback: \${e.message}")
+                            delay(3000L)
+                        }
+                    }
+                }
     }
 
     fun stopRingback() {
@@ -202,14 +220,15 @@ class CiCareCallService:
 
     fun startCallTimer() {
         timerJob?.cancel()
-        timerJob = CoroutineScope(Dispatchers.Default).launch {
-            var seconds = 0L
-            while (isActive) {
-                delay(1000)
-                seconds++
-                tickerListener.onTimeTicketUpdate(seconds)
-            }
-        }
+        timerJob =
+                CoroutineScope(Dispatchers.Default).launch {
+                    var seconds = 0L
+                    while (isActive) {
+                        delay(1000)
+                        seconds++
+                        tickerListener.onTimeTicketUpdate(seconds)
+                    }
+                }
     }
 
     fun stopTimer() {
@@ -218,10 +237,11 @@ class CiCareCallService:
 
     private fun acquireWakeLock() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "CiCareCallService::CallWakeLock"
-        )
+        wakeLock =
+                powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "CiCareCallService::CallWakeLock"
+                )
         wakeLock?.acquire(60 * 60 * 1000L) // 1 jam, bisa diperpanjang
     }
 
@@ -231,7 +251,11 @@ class CiCareCallService:
 
     private fun keepWifiOn() {
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CiCareCallService::WifiLock")
+        wifiLock =
+                wifiManager.createWifiLock(
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        "CiCareCallService::WifiLock"
+                )
         wifiLock?.acquire()
     }
 
@@ -247,132 +271,101 @@ class CiCareCallService:
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isClosed = false
-        metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)?.mapNotNull {
-                val key = it.key as? String
-                val value = it.value as? String
-                if (key != null && value != null) key to value else null
-            }?.toMap() ?: emptyMap()
-            HashMap(metaData + extra)
-        } else {
-            val extra = (intent?.getSerializableExtra("meta_data") as? HashMap<*, *>)?.mapNotNull {
-                val key = it.key as? String
-                val value = it.value as? String
-                if (key != null && value != null) key to value else null
-            }?.toMap() ?: emptyMap()
-            HashMap(metaData + extra)
-        }
+        metaData =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val extra =
+                            intent?.getSerializableExtra("meta_data", HashMap::class.java)
+                                    ?.mapNotNull {
+                                        val key = it.key as? String
+                                        val value = it.value as? String
+                                        if (key != null && value != null) key to value else null
+                                    }
+                                    ?.toMap()
+                                    ?: emptyMap()
+                    HashMap(metaData + extra)
+                } else {
+                    val extra =
+                            (intent?.getSerializableExtra("meta_data") as? HashMap<*, *>)
+                                    ?.mapNotNull {
+                                        val key = it.key as? String
+                                        val value = it.value as? String
+                                        if (key != null && value != null) key to value else null
+                                    }
+                                    ?.toMap()
+                                    ?: emptyMap()
+                    HashMap(metaData + extra)
+                }
 
         intent?.let { this.intent = Intent(it) }
 
-        when(intent?.action) {
+        when (intent?.action) {
             ACTION.INCOMING -> {
-                metaData["call_${callState.value}"] ?: callState.value
-
-               }
-//                if (callState.value == "CONNECTED") {
-//                    // Sudah ada panggilan, langsung missed
-//                    Log.i("SDK Call", "ongoing call from: ${intent.getStringExtra("callee_name")}")
-//
-//                    showMissedCallNotification(
-//                        callerName = intent.getStringExtra("caller_name") ?: "Unknown",
-//                        callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
+                // No-op or handle incoming action specifically if needed
+            }
+            //                if (callState.value == "CONNECTED") {
+            //                    // Sudah ada panggilan, langsung missed
+            //                    Log.i("SDK Call", "ongoing call from:
+            // ${intent.getStringExtra("callee_name")}")
+            //
+            //                    showMissedCallNotification(
+            //                        callerName = intent.getStringExtra("caller_name") ?:
+            // "Unknown",
+            //                        callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
 
             ACTION.ONGOING -> onOngoingCall(intent)
             ACTION.ACCEPT -> answerCall(intent)
             ACTION.OUTGOING -> serviceScope.launch { onOutgoingCall(intent) }
-            // ACTION.REJECT -> reject()
+            ACTION.REJECT -> reject()
             ACTION.HANGUP -> hangup()
             "SCREEN" -> onScreen(intent)
         }
         return START_STICKY
     }
 
-
     private fun onScreen(intent: Intent) {
-        startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtras(intent)
-        })
+        startActivity(
+                Intent(this, ScreenCallActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtras(intent)
+                }
+        )
     }
 
-//    fun reject() {
-//        val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-//
-//        if (isForeground) {
-//            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-//                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-//                action = "HANGUP"
-//            })
-//        } else {
-//            socketManager.send("HANGUP", JSONObject().apply {})
-//            if (::eventListener.isInitialized)
-//                eventListener.onCallStateChanged(CallState.ENDED)
-//            onCallStateChanged(CallState.ENDED)
-//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-//                stopForeground(STOP_FOREGROUND_REMOVE)
-//            } else {
-//                stopForeground(true)
-//            }
-//            stopSelf()
-//        }
-//    }
+    fun hangup() {
+        isClosed = true
+        if (callState.value.toLowerCase(Locale.ROOT) == "end") return
+        callState.value = "end"
+        try {
+            // 1️⃣ Kirim sinyal ke server
+            socketManager.send("REQUEST_HANGUP", JSONObject())
 
-//    fun hangup() {
-//        socketManager.send("REQUEST_HANGUP", JSONObject().apply {})
-//        if (::eventListener.isInitialized)
-//            eventListener.onCallStateChanged(CallState.END)
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-//            stopForeground(STOP_FOREGROUND_REMOVE)
-//        } else {
-//            stopForeground(true)
-//        }
-//        print("SDK HANGUP");
-//        stopSelf()
-//        webRTCManager.close()
-//        socketManager.disconnect()
-//        stopRingback()
-//        stopTimer()
-//        stopForeground(true)
-//        stopSelf()
-//    }
-fun hangup() {
-    isClosed = true
-    if (callState.value.toLowerCase(Locale.ROOT) == "end") return
-    callState.value = "end"
-    try {
-        // 1️⃣ Kirim sinyal ke server
-        socketManager.send("REQUEST_HANGUP", JSONObject())
+            // 2️⃣ Update UI / listener call state
+            if (::eventListener.isInitialized) {
+                eventListener.onCallStateChanged(CallState.END)
+            }
 
-        // 2️⃣ Update UI / listener call state
-        if (::eventListener.isInitialized) {
-            eventListener.onCallStateChanged(CallState.END)
+            // 3️⃣ Hentikan semua audio & timer
+            stopRingback()
+            stopTimer()
+
+            // 4️⃣ Tutup WebRTC & signaling
+            webRTCManager.close()
+            socketManager.disconnect()
+
+            // 5️⃣ Hentikan notifikasi foreground
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                stopForeground(true)
+            }
+
+            // 6️⃣ Log dan hentikan service
+            Log.i("SDK CALL", "Hangup pressed, service stopping")
+            forceStop()
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "Error while hanging up: ${e.message}", e)
         }
-
-        // 3️⃣ Hentikan semua audio & timer
-        stopRingback()
-        stopTimer()
-
-        // 4️⃣ Tutup WebRTC & signaling
-        webRTCManager.close()
-        socketManager.disconnect()
-
-        // 5️⃣ Hentikan notifikasi foreground
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            stopForeground(true)
-        }
-
-        // 6️⃣ Log dan hentikan service
-        Log.i("SDK CALL", "Hangup pressed, service stopping")
-        forceStop()
-
-    } catch (e: Exception) {
-        Log.e("SDK CALL", "Error while hanging up: ${e.message}", e)
     }
-}
-
 
     fun forceStop() {
         isClosed = true
@@ -382,7 +375,9 @@ fun hangup() {
         stopTimer()
         webRTCManager.close()
         socketManager.disconnect()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (keepNotificationOnStop && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_DETACH)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
             stopForeground(true)
@@ -413,16 +408,62 @@ fun hangup() {
         socketManager.send("INIT_CALL", JSONObject().apply {})
     }
 
+    fun reject() {
+        isClosed = true
+        if (callState.value.lowercase(Locale.ROOT) == "end") return
+        callState.value = "end"
+        try {
+            // Send REJECT signal instead of REQUEST_HANGUP
+            socketManager.send(
+                    "REJECT",
+                    JSONObject().apply { put("caller_id", intent?.getStringExtra("caller_id")) }
+            )
+
+            if (::eventListener.isInitialized) {
+                eventListener.onCallStateChanged(CallState.END)
+            }
+
+            stopRingback()
+            stopTimer()
+
+            webRTCManager.close()
+            socketManager.disconnect()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                stopForeground(true)
+            }
+
+            Log.i("SDK CALL", "Reject called, service stopping")
+            forceStop()
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "Error while rejecting: \${e.message}", e)
+        }
+    }
     fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
-        val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        val isForeground =
+                ProcessLifecycleOwner.get()
+                        .lifecycle
+                        .currentState
+                        .isAtLeast(Lifecycle.State.STARTED)
         if (fromScreen != true && !isForeground) {
-            startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                action = "ANSWER"
-                putExtras(intent)
-            })
+            startActivity(
+                    Intent(this, ScreenCallActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        action = "ANSWER"
+                        putExtras(intent)
+                    }
+            )
         }
         this.intent = Intent(intent)
+
+        if (!hasMicrophonePermission()) {
+            Log.e("SDK CALL", "Microphone permission missing in answerCall, rejecting immediately.")
+            serviceScope.launch(Dispatchers.Main) { reject() }
+            return
+        }
+
         val server = intent.getStringExtra("server") ?: ""
         val token = intent.getStringExtra("token") ?: ""
         socketManager.connect(server, token)
@@ -431,6 +472,11 @@ fun hangup() {
     }
 
     suspend fun ackAnswer() {
+        if (!hasMicrophonePermission()) {
+            Log.e("SDK CALL", "Microphone permission missing, cannot ackAnswer. Rejecting.")
+            serviceScope.launch(Dispatchers.Main) { reject() }
+            return
+        }
         val sdp: SessionDescription?
         var event = "SDP_OFFER"
         if (this.isFromPhone) {
@@ -442,38 +488,65 @@ fun hangup() {
             sdp = webRTCManager.createOffer()
         }
         Log.i("SDK CALL", "ack answer")
-        socketManager.send(event, JSONObject().apply {
-            put("sdp", JSONObject().apply {
-                put("type", sdp.type.toString())
-                put("sdp", sdp.description)
-            })
-        })
+        socketManager.send(
+                event,
+                JSONObject().apply {
+                    put(
+                            "sdp",
+                            JSONObject().apply {
+                                put("type", sdp!!.type.toString())
+                                put("sdp", sdp.description)
+                            }
+                    )
+                }
+        )
     }
 
+    private fun hasMicrophonePermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+    }
 
     @SuppressLint("MissingPermission")
     private fun onOutgoingCall(intent: Intent) {
         outgoingIntent = intent
         this.intent = intent
-        //val callType = intent.getStringExtra("call_type") ?: "outgoing"
+        // val callType = intent.getStringExtra("call_type") ?: "outgoing"
         val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
         callName = calleeName
         val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
-        CallNotificationManager.provideNotificationManagerCompat(this,
-            "CALL_OUTGOING_CICARE",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationManager.IMPORTANCE_HIGH
-            } else Notification.PRIORITY_HIGH)
-        val notification = CallNotificationManager.outgoingCallNotificationBuilder(
-            this,
-            intent,
-            "CALL_OUTGOING_CICARE",
-            metaData["call_${callState.value}"] ?: callState.value,
-            calleeName,
-            calleeAvatar
+        CallNotificationManager.provideNotificationManagerCompat(
+                this,
+                "CALL_OUTGOING_CICARE",
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    NotificationManager.IMPORTANCE_HIGH
+                } else Notification.PRIORITY_HIGH
         )
+        val notification =
+                CallNotificationManager.outgoingCallNotificationBuilder(
+                        this,
+                        intent,
+                        "CALL_OUTGOING_CICARE",
+                        metaData["call_${callState.value}"] ?: callState.value,
+                        calleeName,
+                        calleeAvatar
+                )
 
-        startForeground(104, notification.build())
+        if (Build.VERSION.SDK_INT >= 34) { // Android 14+
+            startForeground(
+                    104,
+                    notification.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(
+                    104,
+                    notification.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(104, notification.build())
+        }
         /*startActivity(Intent(this, ScreenCallActivity::class.java).apply {
             action = ACTION.OUTGOING
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -484,32 +557,46 @@ fun hangup() {
     fun cancelCall() {
         isClosed = true
         socketManager.send("CANCEL", JSONObject().apply {})
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        else
-            stopForeground(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE)
+        else stopForeground(true)
         stopSelf()
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     fun outgoingCallStateUpdate(callState: String) {
 
-        val notificationManager = CallNotificationManager.provideNotificationManagerCompat(this,
-            "CALL_OUTGOING_CICARE",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationManager.IMPORTANCE_DEFAULT
-            } else Notification.PRIORITY_DEFAULT)
+        val notificationManager =
+                CallNotificationManager.provideNotificationManagerCompat(
+                        this,
+                        "CALL_OUTGOING_CICARE",
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            NotificationManager.IMPORTANCE_DEFAULT
+                        } else Notification.PRIORITY_DEFAULT
+                )
         this.callState.value = callState
         val calleeName = outgoingIntent?.getStringExtra("callee_name") ?: "unknown"
         val calleeAvatar = outgoingIntent?.getStringExtra("callee_avatar") ?: ""
-        val notification = CallNotificationManager.outgoingCallNotificationBuilder(
-            this,
-            outgoingIntent!!,
-            "CALL_OUTGOING_CICARE",
-            metaData[callState] ?: callState,
-            calleeName,
-            calleeAvatar
-        )
+        val statusText = metaData["call_$callState"] ?: callState
+        val isTerminalState = callState in listOf("busy", "refused", "failed", "timeout")
+        val notification = if (isTerminalState) {
+            keepNotificationOnStop = true
+            CallNotificationManager.terminalCallNotificationBuilder(
+                this,
+                "CALL_OUTGOING_CICARE",
+                calleeName,
+                calleeAvatar,
+                statusText
+            )
+        } else {
+            CallNotificationManager.outgoingCallNotificationBuilder(
+                this,
+                outgoingIntent!!,
+                "CALL_OUTGOING_CICARE",
+                statusText,
+                calleeName,
+                calleeAvatar
+            )
+        }
 
         notificationManager.notify(104, notification.build())
     }
@@ -517,23 +604,43 @@ fun hangup() {
     private fun onOngoingCall(intent: Intent) {
         val callType = intent.getStringExtra("call_type") ?: "outgoing"
         val callerName =
-            if (callType == "incoming") intent.getStringExtra("caller_name") else intent.getStringExtra("callee_name")
+                if (callType == "incoming") intent.getStringExtra("caller_name")
+                else intent.getStringExtra("callee_name")
         val callerAvatar =
-            if (callType == "incoming") intent.getStringExtra("caller_avatar") else intent.getStringExtra("callee_avatar")
-        CallNotificationManager.provideNotificationManagerCompat(this,
-            "CALL_ONGOING_CICARE",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationManager.IMPORTANCE_DEFAULT
-            } else Notification.PRIORITY_DEFAULT)
-        val notification = CallNotificationManager.ongoingCallNotificationBuilder(
-            this,
-            intent,
-            "CALL_ONGOING_CICARE",
-            callerName ?: this.callName ?: "unknown",
-            callerAvatar ?: ""
+                if (callType == "incoming") intent.getStringExtra("caller_avatar")
+                else intent.getStringExtra("callee_avatar")
+        CallNotificationManager.provideNotificationManagerCompat(
+                this,
+                "CALL_ONGOING_CICARE",
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    NotificationManager.IMPORTANCE_DEFAULT
+                } else Notification.PRIORITY_DEFAULT
         )
+        val notification =
+                CallNotificationManager.ongoingCallNotificationBuilder(
+                        this,
+                        intent,
+                        "CALL_ONGOING_CICARE",
+                        callerName ?: this.callName ?: "unknown",
+                        callerAvatar ?: ""
+                )
         eventListener.onCallStateChanged(CallState.CONNECTED)
-        startForeground(104, notification.build())
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                    104,
+                    notification.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(
+                    104,
+                    notification.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(104, notification.build())
+        }
         startCallTimer()
     }
 
@@ -556,10 +663,13 @@ fun hangup() {
      * @param sdp The session description created.
      */
     override fun onLocalSdpCreated(sdp: SessionDescription) {
-        socketManager.send("SDP_OFFER", JSONObject().apply {
-            put("type", sdp.type)
-            put("sdp", sdp.description)
-        })
+        socketManager.send(
+                "SDP_OFFER",
+                JSONObject().apply {
+                    put("type", sdp.type)
+                    put("sdp", sdp.description)
+                }
+        )
     }
 
     /**
@@ -568,11 +678,14 @@ fun hangup() {
      * @param candidate The ICE candidate to be sent to remote peer.
      */
     override fun onIceCandidateGenerated(candidate: IceCandidate) {
-        socketManager.send("ICE_CANDIDATE", JSONObject().apply {
-            put("sdpMid", candidate.sdpMid)
-            put("sdpMLineIndex", candidate.sdpMLineIndex)
-            put("candidate", candidate.sdp)
-        })
+        socketManager.send(
+                "ICE_CANDIDATE",
+                JSONObject().apply {
+                    put("sdpMid", candidate.sdpMid)
+                    put("sdpMLineIndex", candidate.sdpMLineIndex)
+                    put("candidate", candidate.sdp)
+                }
+        )
     }
 
     /**
@@ -593,34 +706,42 @@ fun hangup() {
      * @param state The new connection state.
      */
     override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
-        if (::eventListener.isInitialized)
-            eventListener.onConnectionStateChanged(state)
+        if (::eventListener.isInitialized) eventListener.onConnectionStateChanged(state)
     }
 
     @SuppressLint("MissingPermission")
     override fun onCallStateChanged(callState: CallState) {
-        if (::eventListener.isInitialized)
-            eventListener.onCallStateChanged(callState)
+        if (::eventListener.isInitialized) eventListener.onCallStateChanged(callState)
 
         this@CiCareCallService.callState.value = callState.toString().lowercase()
 
-        hasActiveCall = when(callState) {
-            CallState.CALLING, CallState.RINGING, CallState.ANSWERING,
-            CallState.CONNECTING, CallState.CONNECTED -> true
-            else -> false
-        }
+        hasActiveCall =
+                when (callState) {
+                    CallState.CALLING,
+                    CallState.RINGING,
+                    CallState.ANSWERING,
+                    CallState.CONNECTING,
+                    CallState.CONNECTED -> true
+                    else -> false
+                }
 
-        when(callState) {
+        when (callState) {
             CallState.CALLING -> {
                 playRingback(this)
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             }
-            CallState.ANSWERING -> serviceScope.launch {
-                ackAnswer()
-            }
-            CallState.RINGING ->  {
+            CallState.ANSWERING -> serviceScope.launch { ackAnswer() }
+            CallState.RINGING -> {
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 playRingback(this)
+                // Mulai timer 30 detik: auto-cancel jika tidak diangkat
+                ringingTimeoutJob?.cancel()
+                ringingTimeoutJob =
+                        serviceScope.launch {
+                            delay(30_000)
+                            Log.i("SDK CALL", "Ringing timeout - auto cancel after 30s")
+                            cancelCall()
+                        }
             }
             CallState.RECONNECTING -> {}
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
@@ -638,39 +759,44 @@ fun hangup() {
             }
             CallState.CONNECTED -> {
                 stopRingback()
+                ringingTimeoutJob?.cancel() // Panggilan terhubung, batalkan timer timeout
+                ringingTimeoutJob = null
                 intent?.let { onOngoingCall(it) }
             }
             CallState.TIMEOUT -> {
                 stopRingback()
                 stopTimer()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                else
-                    stopForeground(true)
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                else stopForeground(true)
                 stopSelf()
             }
-            CallState.END -> {
+            CallState.END, CallState.MISSED -> {
                 hangup()
                 Log.i("SDK CALL", "HANGUP")
             }
-
             CallState.RINGING_OK -> {}
-            CallState.MISSED -> {}
         }
     }
 
     fun renegotiateRtC(sdpType: String) {
-        if (isClosed) return;
+        if (isClosed) return
         socketManager.send("RECONNECT", JSONObject().apply {})
         CoroutineScope(Dispatchers.Main).launch {
             webRTCManager.reconnectPeer()
             val sdp = webRTCManager.createOffer()
-            socketManager.send("SDP_$sdpType", JSONObject().apply {
-                put("sdp", JSONObject().apply {
-                    put("type", sdp.type.toString())
-                    put("sdp", sdp.description)
-                })
-            })
+            socketManager.send(
+                    "SDP_$sdpType",
+                    JSONObject().apply {
+                        put(
+                                "sdp",
+                                JSONObject().apply {
+                                    put("type", sdp.type.toString())
+                                    put("sdp", sdp.description)
+                                }
+                        )
+                    }
+            )
         }
     }
 
@@ -679,6 +805,12 @@ fun hangup() {
             PeerConnection.IceConnectionState.CONNECTED -> {
                 reconnectAttempt = 0
                 connectionListener?.onSignalStateChanged("connected")
+                // Jika sedang dalam proses menyambungkan, percepat ke status CONNECTED
+                // agar UI segera menampilkan timer dan media aktif tanpa menunggu event socket.
+                val currentState = callState.value.lowercase(Locale.ROOT)
+                if (currentState == "connecting" || currentState == "answering") {
+                    onCallStateChanged(CallState.CONNECTED)
+                }
             }
             PeerConnection.IceConnectionState.DISCONNECTED -> {
                 reconnectAttempt++
@@ -696,11 +828,9 @@ fun hangup() {
                 connectionListener?.onSignalStateChanged("lost")
             }
             else -> {
-                //Log.d("SDK CALL", "ICE State: $state")
+                // Log.d("SDK CALL", "ICE State: $state")
             }
         }
         Log.d("SDK CALL", "ICE State: $state")
     }
-
-
 }

@@ -4,8 +4,10 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Binder
 import android.os.Build
@@ -53,6 +55,7 @@ class IncomingCallService : Service(), CallStateListener {
     private var isConnected: Boolean = false
 
     public var callState: CallState? = null
+    private var hasBeenConnected = false
 
     private val binder = LocalBinder()
 
@@ -89,14 +92,20 @@ class IncomingCallService : Service(), CallStateListener {
                 }?.toMap() ?: emptyMap()
             HashMap(metaData + extra)
         }
+        intent?.let { this.intent = Intent(it) }
+
+        // Always ensure caller info is captured if present in the current intent
+        intent?.getStringExtra("caller_name")?.let { callerName = it }
+        intent?.getStringExtra("caller_avatar")?.let { callerAvatar = it }
+
         when (intent?.action) {
             ACTION.INCOMING -> {
-                callerName = intent.getStringExtra("caller_name") ?: "unknown"
-                callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-
                 onIncomingCall(intent)
             }
-            ACTION.REJECT -> reject()
+            ACTION.REJECT -> {
+                Log.i("SDK CALL", "ACTION.REJECT received")
+                reject()
+            }
         }
         return START_STICKY
     }
@@ -111,14 +120,30 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
-    private fun showMissedCallNotification() {
-
-        val description = "Missed call from $callerName"
+    fun showMissedCallNotification() {
+        val action = intent?.action
+        if (action != ACTION.INCOMING && action != ACTION.REJECT) {
+            Log.i("SDK CALL", "Skipping missed call notification because action is $action")
+            stopSelf()
+            return
+        }
+        if (hasBeenConnected) {
+            Log.i("SDK CALL", "Skipping missed call notification because call was already connected")
+            stopSelf()
+            return
+        }
+        Log.i("SDK CALL", "showMissedCallNotification called for $callerName")
+        
+        // Ensure we have the latest info from the intent if fields are null
+        if (callerName == null) callerName = intent?.getStringExtra("caller_name")
+        if (callerAvatar == null) callerAvatar = intent?.getStringExtra("caller_avatar")
+        
+        val description = "Missed call from ${callerName ?: "unknown"}"
 
         CallNotificationManager.provideNotificationManagerCompat(
             this, "CALL_MISSED_CHANNEL_CICARE",
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            NotificationManager.IMPORTANCE_MAX else Notification.PRIORITY_MAX
+                NotificationManager.IMPORTANCE_MAX else Notification.PRIORITY_MAX
         )
         val notification = CallNotificationManager.missedCallNotificationBuilder(
             this,
@@ -127,11 +152,19 @@ class IncomingCallService : Service(), CallStateListener {
             callerAvatar ?: "",
             description
         )
-        startForeground(101, notification.build())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            stopForeground(STOP_FOREGROUND_DETACH)
-        else
-            stopForeground(false)
+
+        // Important: clear foreground state first to ensure the "Incoming Call" UI is removed
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            stopForeground(true)
+        }
+
+        // Now post the "Missed Call" notification using ID 104 to replace the previous UI
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(104, notification.build())
+
+        Log.i("SDK CALL", "Missed call notification posted, stopping service")
         stopSelf()
     }
 
@@ -160,7 +193,13 @@ class IncomingCallService : Service(), CallStateListener {
                 callerName,
                 callerAvatar
             )
-            startForeground(104, notification.build())
+            if (Build.VERSION.SDK_INT >= 34) { // Android 14+
+                startForeground(104, notification.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(104, notification.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(104, notification.build())
+            }
         }
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {
@@ -185,16 +224,15 @@ class IncomingCallService : Service(), CallStateListener {
     }
 
     fun reject() {
-        //val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-        //if (isForeground) {
-            this.callListener?.onCallStateChanged(CallState.END)
-        //}
-        socketManager.send("REJECT", JSONObject().apply {})
-        if (Build.VERSION.SDK_INT>= Build.VERSION_CODES.N)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        else
-            stopForeground(true)
-        stopSelf()
+        Log.i("SDK CALL", "REJECT called in IncomingCallService")
+        // Always send REJECT to server first to stop caller ringing. 
+        // Include caller_id so the server can identify which call to terminate.
+        socketManager.send("REJECT", JSONObject().apply {
+            put("caller_id", intent?.getStringExtra("caller_id"))
+        })
+        
+        // Delegate to onCallStateChanged to handle notification replacement and service stopping
+        onCallStateChanged(CallState.END)
     }
 
     private fun initReceive(server: String, token: String, isFromPhone: Boolean?) {
@@ -204,12 +242,15 @@ class IncomingCallService : Service(), CallStateListener {
             socketManager.send("BUSY", JSONObject().apply {
                 put("caller_id", intent?.getStringExtra("caller_id"))
             })
+            // If already in a call, show missed call notification immediately (if we have permission)
             if (ActivityCompat.checkSelfPermission(
                     this,
                     Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
+                ) == PackageManager.PERMISSION_GRANTED
             ) {
                 showMissedCallNotification()
+            } else {
+                stopSelf()
             }
         } else {
             socketManager.send("RINGING_CALL", JSONObject().apply {})
@@ -244,15 +285,16 @@ class IncomingCallService : Service(), CallStateListener {
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     override fun onCallStateChanged(callState: CallState) {
-        Log.i("SDK Call", "$callState")
+        Log.i("SDK Call", "onCallStateChanged: $callState")
         this.callState = callState
-        if (callState == CallState.END || callState == CallState.MISSED) {
-            if (!isConnected)
+        if (callState == CallState.END || callState == CallState.MISSED || callState == CallState.TIMEOUT) {
+            if (!isConnected && !hasBeenConnected)
                 showMissedCallNotification()
             callListener?.onCallStateChanged(callState)
             isConnected = false
         } else if (callState == CallState.CONNECTED){
             isConnected = true
+            hasBeenConnected = true
         }
         if ( callState == CallState.RINGING_OK) {
             this.showIncomingScreen(intent)

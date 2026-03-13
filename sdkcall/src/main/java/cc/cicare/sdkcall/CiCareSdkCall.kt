@@ -207,12 +207,25 @@ object CiCareSdkCall {
                 putExtra("server", server)
                 putExtra("from_phone", isFromPhone)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                ctx.startForegroundService(intent)
-            else
-                ctx.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    ctx.startForegroundService(intent)
+                else
+                    ctx.startService(intent)
+            } catch (e: Exception) {
+                Log.e("SDK CALL", "Failed to start incoming service in foreground: ${e.message}")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (e is android.app.ForegroundServiceStartNotAllowedException || e.message?.contains("ForegroundServiceStartNotAllowedException") == true)) {
+                    val notificationManager = CallNotificationManager.provideNotificationManagerIncoming(
+                        ctx, "CICARE_SDK_INCOMING",
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                            android.app.NotificationManager.IMPORTANCE_HIGH else android.app.Notification.PRIORITY_HIGH
+                    )
+                    val notification = CallNotificationManager.incomingCallNotificationBuilder(ctx, intent, "CICARE_SDK_INCOMING", caller, callerAvatar ?: "")
+                    notificationManager.notify(104, notification.build())
+                }
+            }
         } catch (e: Exception) {
-            Log.e("SDK CALL", "❌ Failed to decode or parse JSON: ${e.message}")
+            Log.e("SDK CALL", " Failed to decode or parse JSON: ${e.message}")
         }
     }
 
@@ -228,34 +241,31 @@ object CiCareSdkCall {
                  metaData: Map<String, String> = emptyMap()) {
         val ctx = contextRef?.get() ?: return
         CoroutineScope(Dispatchers.Main).launch {
-            if (isForegroundMicPermissionGranted(activity)) {
-                val caller = if (callerName == "" || callerName == null) {
-                    "Caller"
-                } else {
-                    callerName
-                }
-                val callee = if (calleeName == "" || calleeName == null) {
-                    "Callee"
-                } else {
-                    calleeName
-                }
-                val intent = Intent(ctx, ScreenCallActivity::class.java).apply {
-                    action = CiCareCallService.ACTION.OUTGOING
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    putExtra("call_type", "outgoing")
-                    putExtra("callee_id", calleeId)
-                    putExtra("callee_name", callee)
-                    putExtra("callee_avatar", calleeAvatar)
-                    putExtra("caller_id", callerId)
-                    putExtra("caller_name", caller)
-                    putExtra("caller_avatar", callerAvatar)
-                    putExtra("checksum", checkSum)
-                    putExtra("meta_data", HashMap(metaData))
-                }
-                ctx.startActivity(intent)
+            val caller = if (callerName == "" || callerName == null) {
+                "Caller"
             } else {
-                MessageListenerHolder.callEventListener?.onError(101, "Permisssion not granted")
+                callerName
             }
+            val callee = if (calleeName == "" || calleeName == null) {
+                "Callee"
+            } else {
+                calleeName
+            }
+            // Launch PermissionRequestActivity first to intercept permission checking
+            val intent = Intent(ctx, cc.cicare.sdkcall.notifications.ui.PermissionRequestActivity::class.java).apply {
+                action = CiCareCallService.ACTION.OUTGOING
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                putExtra("call_type", "outgoing")
+                putExtra("callee_id", calleeId)
+                putExtra("callee_name", callee)
+                putExtra("callee_avatar", calleeAvatar)
+                putExtra("caller_id", callerId)
+                putExtra("caller_name", caller)
+                putExtra("caller_avatar", callerAvatar)
+                putExtra("checksum", checkSum)
+                putExtra("meta_data", HashMap(metaData))
+            }
+            ctx.startActivity(intent)
         }
     }
 

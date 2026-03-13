@@ -7,10 +7,10 @@ import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.rtc.WebRTCManager
 import io.socket.client.IO
 import io.socket.client.Socket
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import io.socket.emitter.Emitter
+import kotlinx.coroutines.*
 import org.json.JSONObject
+import org.webrtc.IceCandidate
 import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
 
@@ -156,7 +156,7 @@ class SocketManager {
 
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
-            //callStateListener?.onCallStateChanged(CallState.END)
+            callStateListener?.onCallStateChanged(CallState.END)
             webRTCManager?.close()
             socket?.disconnect()
         }

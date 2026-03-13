@@ -89,6 +89,7 @@ object CallNotificationManager {
 
         val rejectService = Intent(context, IncomingCallService::class.java).apply{
             action = CiCareCallService.ACTION.REJECT
+            putExtras(intent)
         }
 
         return NotificationCompat.Builder(context, channelId)
@@ -98,7 +99,6 @@ object CallNotificationManager {
             .setVibrate(longArrayOf(0, 500, 1000, 500, 1000))
             .addPerson(callerProfile)
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
@@ -169,6 +169,31 @@ object CallNotificationManager {
                 callerProfile,
                 serviceHangupCallIntent(context, intent)
             ))
+    }
+
+    @Provides
+    @Singleton
+    fun terminalCallNotificationBuilder(
+        @ApplicationContext context: Context,
+        channelId: String,
+        calleeName: String,
+        calleeAvatar: String,
+        description: String
+    ): NotificationCompat.Builder {
+        val callerProfile = Person.Builder()
+            .setUri(calleeAvatar)
+            .setName(calleeName)
+            .setImportant(true)
+            .build()
+
+        return NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(CiCareCallService.MISSED_CALL_ICON)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .addPerson(callerProfile)
+            .setContentTitle(calleeName)
+            .setContentText(description)
+            .setAutoCancel(true)
+            .setOngoing(false)
     }
 
     @Provides

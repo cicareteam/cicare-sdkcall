@@ -10,6 +10,7 @@ import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.*
+import org.webrtc.SessionDescription
 import kotlin.coroutines.resumeWithException
 
 class WebRTCManager(
@@ -247,6 +248,7 @@ class WebRTCManager(
         }
 
         try {
+            audioManager.isSpeakerphoneOn = enabled // Explicitly toggle for MediaPlayer ringback routing
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (enabled) {
