@@ -79,7 +79,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 groupId = "com.github.cicareteam"
                 artifactId = "cicare-sdkcall"
-                version = "1.2.1-rc.4"
+                version = "1.2.1-rc.5"
                 from(components["release"])
             }
         }
