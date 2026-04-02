@@ -19,45 +19,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import cc.cicare.sdkcall.event.MessageListenerHolder
+import cc.cicare.sdkcall.utils.PermissionHelper
 
 class PermissionRequestActivity : ComponentActivity() {
 
     private var showPermissionDialog by mutableStateOf(false)
 
-    private val requiredPermissions =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    )
-
-    private val requiredPermissions28 =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.FOREGROUND_SERVICE,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    )
-
-    private val requiredPermissionsTirmaisu =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.FOREGROUND_SERVICE,
-                    android.Manifest.permission.POST_NOTIFICATIONS,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    )
-
-    private val requiredPermissionsUpsideDownCake =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.FOREGROUND_SERVICE,
-                    android.Manifest.permission.POST_NOTIFICATIONS,
-                    android.Manifest.permission.BLUETOOTH_CONNECT,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
-            )
-
     private val settingsLauncher =
             registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                val permissions = getRequiredPermissions()
+                val permissions = PermissionHelper.getRequiredPermissions()
                 val allGranted =
                         permissions.all {
                             ContextCompat.checkSelfPermission(this, it) ==
@@ -81,21 +51,11 @@ class PermissionRequestActivity : ComponentActivity() {
                 }
             }
 
-    private fun getRequiredPermissions(): Array<String> {
-        return when {
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                    requiredPermissionsTirmaisu
-            else -> requiredPermissionsUpsideDownCake
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Cek izin awal
-        val permissions = getRequiredPermissions()
+        val permissions = PermissionHelper.getRequiredPermissions()
         val notGranted =
                 permissions.filter {
                     ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -150,7 +110,6 @@ class PermissionRequestActivity : ComponentActivity() {
                                 Text(
                                         text =
                                                 metaData["call_permission_microphone_demied_title"]
-                                                        ?.toString()
                                                         ?: "Microphone Permission Required"
                                 )
                             },
@@ -159,7 +118,6 @@ class PermissionRequestActivity : ComponentActivity() {
                                         text =
                                                 metaData[
                                                                 "call_permission_microphone_demied_content"]
-                                                        ?.toString()
                                                         ?: "Please enable microphone permission in system settings to make a call."
                                 )
                             },
@@ -185,7 +143,6 @@ class PermissionRequestActivity : ComponentActivity() {
                                     Text(
                                             text =
                                                     metaData["call_permission_btn_setting"]
-                                                            ?.toString()
                                                             ?: "Go to Settings",
                                             color = Color(0xFF00BABD)
                                     )
@@ -199,7 +156,7 @@ class PermissionRequestActivity : ComponentActivity() {
                                         }
                                 ) {
                                     Text(
-                                            text = metaData["call_permission_btn_deny"]?.toString()
+                                            text = metaData["call_permission_btn_deny"]
                                                             ?: "Cancel",
                                             color = Color.Gray
                                     )
@@ -251,6 +208,7 @@ class PermissionRequestActivity : ComponentActivity() {
     }
 
     // override back pressed to throw permission error if cancelled without allowing
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         super.onBackPressed()
         cancelCall()

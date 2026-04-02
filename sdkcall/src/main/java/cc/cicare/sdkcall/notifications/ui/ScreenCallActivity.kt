@@ -1,18 +1,21 @@
 package cc.cicare.sdkcall.notifications.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -20,48 +23,20 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.annotation.RequiresApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -75,1313 +50,957 @@ import cc.cicare.sdkcall.event.MessageListenerHolder
 import cc.cicare.sdkcall.libs.CallRepository
 import cc.cicare.sdkcall.libs.CallRequest
 import cc.cicare.sdkcall.libs.CallResult
-import cc.cicare.sdkcall.notifications.ui.icons.SpeakerBluetooth
+import cc.cicare.sdkcall.notifications.ui.model.CallInfo
 import cc.cicare.sdkcall.notifications.ui.model.CallViewModel
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import cc.cicare.sdkcall.utils.NetworkObserver
-import coil.compose.AsyncImage
-import java.util.Locale
-import kotlin.collections.HashMap
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.PeerConnection
-
-data class CallInfo(
-        val callerId: String,
-        val callerName: String,
-        val callerAvatar: String,
-        val calleeId: String,
-        val calleeName: String,
-        val calleeAvatar: String,
-        val checksum: String,
-)
+import java.util.Locale
 
 class ScreenCallActivity :
-        ComponentActivity(), CallStateListener, TimeTickerListener, ConnectionStateListener {
+    ComponentActivity(), CallStateListener, TimeTickerListener, ConnectionStateListener {
+
+    // ─────────────────────────────────────────────────────────────
+    // Service binding
+    // ─────────────────────────────────────────────────────────────
 
     private var callService: CiCareCallService? = null
-
     private var incomingService: IncomingCallService? = null
-    private var bound: Boolean = false
-    private var inbound: Boolean = false
-    private var eventListener: CallStateListener = this
-    private var tickerListener: TimeTickerListener = this
-    private var connectionLister: ConnectionStateListener = this
-    private var permissionGranted: Boolean = false
-    // private var callDurationJob: Job? = null
-    // private var callSeconds = 0
 
-    private var timeTicker by mutableLongStateOf(0L)
+    /** True setelah callServiceConnection.onServiceConnected dipanggil. */
+    private var bound: Boolean = false
+
+    /** True setelah incomingServiceConnection.onServiceConnected dipanggil. */
+    private var inbound: Boolean = false
+
+    /**
+     * Guard agar startCallService() hanya dieksekusi sekali per sesi Activity,
+     * mencegah double-bind saat onStart dipanggil berulang (misal kembali dari Settings).
+     */
+    private var serviceStarted: Boolean = false
+
+    // ─────────────────────────────────────────────────────────────
+    // ViewModel & Listeners
+    // ─────────────────────────────────────────────────────────────
+
     private val viewModel by viewModels<CallViewModel>()
 
-    // private var callStatusRaw by mutableStateOf("initializing")
-    private var isMicMuted by mutableStateOf(false)
-    private var isSpeakerOn by mutableStateOf(false)
-    private var isOnBluetooth by mutableStateOf(false)
-    private var hasBeenConnected = false
+    private val eventListener: CallStateListener = this
+    private val tickerListener: TimeTickerListener = this
+    private val connectionListener: ConnectionStateListener = this
 
     private val listener: MessageActionListener?
         get() = MessageListenerHolder.listener
-
     private val callEventListener: CallEventListener?
         get() = MessageListenerHolder.callEventListener
 
-    private var metaData: HashMap<*, *> =
-            hashMapOf(
-                    "call_title" to "Free Call",
-                    "call_busy" to "The customer is busy and cannot be reached",
-                    "call_calling" to "Calling...",
-                    "call_connecting" to "Connecting...",
-                    "call_ringing" to "Ringing...",
-                    "call_refused" to "Decline",
-                    "call_end" to "End Call",
-                    "call_incoming" to "Incoming",
-                    "call_temporarily_unavailable" to "Currently unreachable",
-                    "call_lost_connection" to "Connection lost",
-                    "call_weak_signal" to "Weak Signal",
-                    // "call_name_title" to "Xanh SM Customer",
-                    "call_btn_message" to "Send Message",
-                    "call_btn_mute" to "Mute",
-                    "call_btn_speaker" to "Speaker",
-                    "call_failed_api" to "Call failed due to system error",
-                    "call_failed_no_connection" to "No internet connection",
-                    "call_feedback_bad" to "Bad experience",
-                    "call_feedback_bad_driver_cannot_hear" to "Driver couldn't hear me",
-                    "call_feedback_bad_lost_connection" to "Call was disconnected",
-                    "call_feedback_bad_noisy" to "Too much background noise",
-                    "call_feedback_bad_unstable_connection" to "Unstable connection",
-                    "call_feedback_btn_submit" to "Submit Feedback",
-                    "call_feedback_desc_content" to "Help us improve by sharing your experience",
-                    "call_feedback_desc_title" to "Tell us about your call experience",
-                    "call_feedback_good" to "Good experience",
-                    "call_feedback_good_connection" to "Good connection",
-                    "call_feedback_good_no_delay" to "No audio delay",
-                    "call_feedback_good_sound" to "Clear sound quality",
-                    "call_feedback_okay" to "Okay",
-                    "call_feedback_okay_delay" to "Audio was delayed",
-                    "call_feedback_okay_flickering_sound" to "Audio was flickering",
-                    "call_feedback_okay_small_sound" to "Sound was too low",
-                    "call_feedback_skip" to "Skip feedback",
-                    "call_feedback_title" to "Call Feedback",
-                    "call_option_btn_free_call" to "Free Call",
-                    "call_option_title" to "Call Options",
-                    "call_permission_btn_allow" to "Allow",
-                    "call_permission_btn_deny" to "Deny",
-                    "call_permission_btn_setting" to "Go to Settings",
-                    "call_permission_btn_skip" to "Skip",
-                    "call_permission_microphone_content" to
-                            "We need access to your microphone to make calls",
-                    "call_permission_microphone_demied_content" to
-                            "Please enable microphone access in your phone’s Settings",
-                    "call_permission_microphone_demied_title" to
-                            "Microphone access is required to make a call",
-                    "call_permission_microphone_title" to "Microphone Permission",
-                    "call_status_call_customer" to "Calling customer",
-                    "call_status_call_customer_no_answer" to "Customer did not answer",
-                    "call_status_call_customer_refused" to "Customer refused the call",
-                    "call_status_call_driver" to "Calling driver",
-                    "call_status_call_driver_cancelled" to "Driver cancelled the call",
-                    "call_status_call_driver_no_answer" to "Driver did not answer",
-                    "call_status_call_driver_refused" to "Driver refused the call",
-                    "call_status_call_from_customer" to "Incoming call from customer",
-                    "call_status_call_from_customer_miss" to "Missed call from customer",
-                    "call_status_call_from_driver" to "Incoming call from driver",
-                    "call_status_call_from_driver_miss" to "Missed call from driver",
-                    "call_status_call_guide_again" to "Please try calling again",
-                    "call_status_call_guide_back" to
-                            "Please return to the app to continue the call",
-                    "call_suggestion_btn_dial" to "Dial",
-                    "call_suggestion_btn_free_call" to "Call for Free",
-                    "call_suggestion_btn_message" to "Send a Message",
-                    "call_suggestion_desc_travelling" to "The user might be traveling",
-                    "call_suggestion_desc_try_again" to "Try calling again in a moment",
-            )
+    // ─────────────────────────────────────────────────────────────
+    // Flags
+    // ─────────────────────────────────────────────────────────────
 
-    private var connectionState by mutableStateOf("")
-    private var networkErrorText by mutableStateOf("")
-    private var showErrorDialog by mutableStateOf(false)
-    private var isSystemError by mutableStateOf(false)
-    private var isOutgoingCall by mutableStateOf(false)
-    private var showPermissionDialog by mutableStateOf(false)
+    private var isMicPermissionGranted: Boolean = false
+    private var hasBeenConnected = false
+
+    // ─────────────────────────────────────────────────────────────
+    // Network observer
+    // ─────────────────────────────────────────────────────────────
 
     private lateinit var networkObserver: NetworkObserver
 
-    private val callServiceConnection =
-            object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                    callService = (binder as CiCareCallService.LocalBinder).getService()
-                    bound = true
-                    // Observe StateFlow
-                    lifecycleScope.launch {
-                        repeatOnLifecycle(Lifecycle.State.STARTED) {
-                            callService?.getCallStateFlow()?.collect { viewModel.updateState(it) }
-                        }
-                    }
-                    callService?.setCallEventListener(eventListener)
-                    callService?.setTickerListener(tickerListener)
-                    callService?.setConnectionStateListener(connectionLister)
-                    callService?.let { service ->
-                        when (intent?.action) {
-                            CiCareCallService.ACTION.ACCEPT ->
-                                    lifecycleScope.launch {
-                                        if (permissionGranted) {
-                                            service.answerCall(intent)
-                                        } else {
-                                            Log.i(
-                                                    "SDK CALL",
-                                                    "Service connected but permission not granted. Waiting for answer() handler."
-                                            )
-                                        }
-                                    }
-                            CiCareCallService.ACTION.INCOMING ->
-                                    lifecycleScope.launch {
-                                        callService?.let { it.callState.value = "incoming" }
-                                    }
-                            CiCareCallService.ACTION.OUTGOING ->
-                                    lifecycleScope.launch {
-                                        if (permissionGranted) {
-                                            Log.i("SDK CALL", "OUTGOING GRANTED")
-                                            requestOutgoingCall(
-                                                    callInfo =
-                                                            CallInfo(
-                                                                    callerId =
-                                                                            intent.getStringExtra(
-                                                                                    "caller_id"
-                                                                            )
-                                                                                    ?: "",
-                                                                    callerName =
-                                                                            intent.getStringExtra(
-                                                                                    "caller_name"
-                                                                            )
-                                                                                    ?: "",
-                                                                    callerAvatar =
-                                                                            intent.getStringExtra(
-                                                                                    "caller_avatar"
-                                                                            )
-                                                                                    ?: "",
-                                                                    calleeId =
-                                                                            intent.getStringExtra(
-                                                                                    "callee_id"
-                                                                            )
-                                                                                    ?: "",
-                                                                    calleeName =
-                                                                            intent.getStringExtra(
-                                                                                    "callee_name"
-                                                                            )
-                                                                                    ?: "",
-                                                                    calleeAvatar =
-                                                                            intent.getStringExtra(
-                                                                                    "callee_avatar"
-                                                                            )
-                                                                                    ?: "",
-                                                                    checksum =
-                                                                            intent.getStringExtra(
-                                                                                    "checksum"
-                                                                            )
-                                                                                    ?: "",
-                                                            ),
-                                                    callService = service
-                                            )
-                                        }
-                                    }
-                            else -> {
-                                intent?.action?.let { Log.i("SDK Call", it) }
-                            }
-                        }
-                    }
-                }
+    // ─────────────────────────────────────────────────────────────
+    // Compose state
+    // ─────────────────────────────────────────────────────────────
 
-                override fun onServiceDisconnected(name: ComponentName?) {
-                    bound = false
-                    callService = null
-                }
-            }
+    private var timeTicker by mutableLongStateOf(0L)
+    private var connectionState by mutableStateOf("")
+    private var networkErrorText by mutableStateOf("")
+    private var isMicMuted by mutableStateOf(false)
+    private var isSpeakerOn by mutableStateOf(false)
+    private var isOnBluetooth by mutableStateOf(false)
+    private var showErrorDialog by mutableStateOf(false)
+    private var isSystemError by mutableStateOf(false)
+    private var isOutgoingCall by mutableStateOf(false)
+    private var showMicPermissionDialog by mutableStateOf(false)
+    private var isMicPermanentlyDenied by mutableStateOf(false)
 
-    private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
-        if (!checkInternetConnection()) {
-            Log.i("SDK CALL", "NO INTERNET")
-            callEventListener?.onError(100, "No internet connection")
-            onNetworkError(
-                    state =
-                            (metaData["call_failed_no_connection"] ?: "No internet connection") as
-                                    String,
-                    systemError = false
-            )
-        } else {
-            try {
-                isOutgoingCall = true
-                when (val result =
-                                CallRepository.requestCall(
-                                        CallRequest(
-                                                callerId = callInfo.callerId,
-                                                callerName = callInfo.callerName,
-                                                callerAvatar = callInfo.callerAvatar,
-                                                calleeId = callInfo.calleeId,
-                                                calleeName = callInfo.calleeName,
-                                                calleeAvatar = callInfo.calleeAvatar,
-                                                checkSum = callInfo.checksum,
-                                        )
-                                )
-                ) {
-                    is CallResult.Success -> {
-                        val apiResponse = result.data
-                        Log.e("SDK CALL", "Success: $apiResponse")
-                        callService.initCall(apiResponse.server, apiResponse.token)
-                        Log.i("SDK Call", apiResponse.callee)
-                    }
-                    is CallResult.Failure -> {
-                        Log.e("SDK CALL", "Error: ${result.error.code} - ${result.error.message}")
-                        if (result.error.code == 400) {
-                            val c = JSONObject(result.error.message)
-                            if (c.get("code") == 3) {
-                                callEventListener?.onError(
-                                        c.get("code") as Int,
-                                        c.get("message") as String
-                                )
-                                this.onNetworkError(
-                                        state =
-                                                (metaData[c.get("message")] ?: c.get("message")) as
-                                                        String,
-                                        systemError = false
-                                )
-                            } else {
-                                callEventListener?.onError(500, "Call failed due to system error")
-                            }
-                        } else {
-                            val c = JSONObject(result.error.message)
-                            callEventListener?.onError(
-                                    result.error.code,
-                                    c.get("message") as String
-                            )
-                            this.onNetworkError(
-                                    state =
-                                            (metaData["call_failed_api"]
-                                                    ?: "Call failed due to system error") as String,
-                                    systemError = true
-                            )
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("SDK CALL", "Error: ${e.message}")
-                callEventListener?.onError(500, "Call failed due to system error")
-                this.onNetworkError(
-                        state =
-                                (metaData["call_failed_api"]
-                                        ?: "Call failed due to system error") as String,
-                        systemError = true
-                )
-                Log.e("SDK CALL", "Error: ${e.cause} ${e.message}")
-            }
-        }
-    }
+    private val PREFS_NAME = "sdk_call_prefs"
+    private val KEY_MIC_REQUESTED = "mic_ever_requested"
 
-    private val incomingServiceConnection =
-            object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                    incomingService = (binder as IncomingCallService.LocalBinder).getService()
-                    inbound = true
-                    incomingService?.setCallListener(eventListener)
-                    incomingService?.setConnectionStateListener(connectionLister)
-                    if (incomingService?.callState == CallState.END) {
-                        hangup()
-                    }
-                }
+    // ─────────────────────────────────────────────────────────────
+    // Permission launchers
+    // ─────────────────────────────────────────────────────────────
 
-                override fun onServiceDisconnected(name: ComponentName?) {
-                    inbound = false
-                    incomingService = null
-                }
-            }
-
-    private fun checkInternetConnection(): Boolean {
-        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
-
-    override fun onStart() {
-        super.onStart()
-        networkObserver.start()
-        if (isForegroundMicPermissionGranted() && !bound) {
-            val intent =
-                    Intent(this, CiCareCallService::class.java).also {
-                        bindService(it, callServiceConnection, BIND_AUTO_CREATE)
-                    }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
+    /**
+     * Launcher untuk meminta RECORD_AUDIO permission dari sistem Android.
+     * Dipanggil setelah user tap "Allow" di ShowDialogAskPermission.
+     */
+    private val micPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                isMicPermissionGranted = true
+                showMicPermissionDialog = false
+                isMicPermanentlyDenied = false
+                onMicPermissionGranted()
             } else {
-                startService(intent)
+                // shouldShowRequestPermissionRationale = false → permanently denied
+                // shouldShowRequestPermissionRationale = true  → denied tapi bisa tanya lagi
+                val canAskAgain = shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+                isMicPermanentlyDenied = !canAskAgain
+                showMicPermissionDialog = true
             }
         }
 
-        if (!isOutgoingCall && !inbound && !bound) {
+    /**
+     * Launcher untuk membuka halaman Settings app saat permission permanently denied.
+     * Setelah user kembali, cek ulang apakah permission sudah di-grant.
+     */
+    private val micSettingsLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val micGranted = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (micGranted) {
+                isMicPermissionGranted = true
+                showMicPermissionDialog = false
+                isMicPermanentlyDenied = false
+                onMicPermissionGranted()
+            } else {
+                isMicPermanentlyDenied = true
+                showMicPermissionDialog = true
+            }
+        }
+
+    // ─────────────────────────────────────────────────────────────
+    // Metadata (UI strings, dapat di-override via intent)
+    // ─────────────────────────────────────────────────────────────
+
+    private var metaData: HashMap<*, *> = hashMapOf(
+        "call_title" to "Free Call",
+        "call_busy" to "The customer is busy and cannot be reached",
+        "call_calling" to "Calling...",
+        "call_connecting" to "Connecting...",
+        "call_ringing" to "Ringing...",
+        "call_refused" to "Decline",
+        "call_end" to "End Call",
+        "call_incoming" to "Incoming",
+        "call_temporarily_unavailable" to "Currently unreachable",
+        "call_lost_connection" to "Connection lost",
+        "call_weak_signal" to "Weak Signal",
+        "call_btn_message" to "Send Message",
+        "call_btn_mute" to "Mute",
+        "call_btn_speaker" to "Speaker",
+        "call_failed_api" to "Call failed due to system error",
+        "call_failed_no_connection" to "No internet connection",
+        "call_feedback_bad" to "Bad experience",
+        "call_feedback_bad_driver_cannot_hear" to "Driver couldn't hear me",
+        "call_feedback_bad_lost_connection" to "Call was disconnected",
+        "call_feedback_bad_noisy" to "Too much background noise",
+        "call_feedback_bad_unstable_connection" to "Unstable connection",
+        "call_feedback_btn_submit" to "Submit Feedback",
+        "call_feedback_desc_content" to "Help us improve by sharing your experience",
+        "call_feedback_desc_title" to "Tell us about your call experience",
+        "call_feedback_good" to "Good experience",
+        "call_feedback_good_connection" to "Good connection",
+        "call_feedback_good_no_delay" to "No audio delay",
+        "call_feedback_good_sound" to "Clear sound quality",
+        "call_feedback_okay" to "Okay",
+        "call_feedback_okay_delay" to "Audio was delayed",
+        "call_feedback_okay_flickering_sound" to "Audio was flickering",
+        "call_feedback_okay_small_sound" to "Sound was too low",
+        "call_feedback_skip" to "Skip feedback",
+        "call_feedback_title" to "Call Feedback",
+        "call_option_btn_free_call" to "Free Call",
+        "call_option_title" to "Call Options",
+        "call_permission_btn_allow" to "Allow",
+        "call_permission_btn_deny" to "Deny",
+        "call_permission_btn_setting" to "Go to Settings",
+        "call_permission_btn_skip" to "Skip",
+        "call_permission_microphone_content" to "We need access to your microphone to make calls",
+        "call_permission_microphone_denied_content" to "Please enable microphone access in your phone's Settings",
+        "call_permission_microphone_denied_title" to "Microphone access is required to make a call",
+        "call_permission_microphone_title" to "Microphone Permission",
+        "call_status_call_customer" to "Calling customer",
+        "call_status_call_customer_no_answer" to "Customer did not answer",
+        "call_status_call_customer_refused" to "Customer refused the call",
+        "call_status_call_driver" to "Calling driver",
+        "call_status_call_driver_cancelled" to "Driver cancelled the call",
+        "call_status_call_driver_no_answer" to "Driver did not answer",
+        "call_status_call_driver_refused" to "Driver refused the call",
+        "call_status_call_from_customer" to "Incoming call from customer",
+        "call_status_call_from_customer_miss" to "Missed call from customer",
+        "call_status_call_from_driver" to "Incoming call from driver",
+        "call_status_call_from_driver_miss" to "Missed call from driver",
+        "call_status_call_guide_again" to "Please try calling again",
+        "call_status_call_guide_back" to "Please return to the app to continue the call",
+        "call_suggestion_btn_dial" to "Dial",
+        "call_suggestion_btn_free_call" to "Call for Free",
+        "call_suggestion_btn_message" to "Send a Message",
+        "call_suggestion_desc_travelling" to "The user might be traveling",
+        "call_suggestion_desc_try_again" to "Try calling again in a moment",
+    )
+
+    // ─────────────────────────────────────────────────────────────
+    // Service connections
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Binding ke IncomingCallService — hanya untuk incoming call.
+     * Dipakai untuk reject, show missed call notification, dan listen state.
+     */
+    private val incomingServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            incomingService = (binder as IncomingCallService.LocalBinder).getService()
+            inbound = true
+            incomingService?.setCallListener(eventListener)
+            incomingService?.setConnectionStateListener(connectionListener)
+            // Jika service sudah END sebelum kita bind (race saat notif datang terlambat)
+            if (incomingService?.callState == CallState.END) {
+                hangup()
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            inbound = false
+            incomingService = null
+        }
+    }
+
+    /**
+     * Binding ke CiCareCallService — distart saat OUTGOING atau saat ACCEPT (answer).
+     * Setelah bound, langsung jalankan aksi sesuai intent action.
+     */
+    private val callServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            callService = (binder as CiCareCallService.LocalBinder).getService()
+            bound = true
+
+            // Observe StateFlow dari service → update ViewModel → update UI
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    callService?.getCallStateFlow()?.collect { viewModel.updateState(it) }
+                }
+            }
+
+            callService?.setCallEventListener(eventListener)
+            callService?.setTickerListener(tickerListener)
+            callService?.setConnectionStateListener(connectionListener)
+
+            // Jalankan aksi sesuai action yang memicu binding ini
+            val service = callService ?: return
+            when (intent?.action) {
+                CiCareCallService.ACTION.ACCEPT -> {
+                    // Notif ACCEPT atau tombol answer di UI → langsung answerCall
+                    service.answerCall(intent, true)
+                }
+                CiCareCallService.ACTION.OUTGOING -> {
+                    // Service sudah running (distart di startCallService()),
+                    // sekarang minta API lalu initCall
+                    lifecycleScope.launch {
+                        requestOutgoingCall(
+                            callInfo = CallInfo(
+                                callerId   = intent?.getStringExtra("caller_id")   ?: "",
+                                callerName = intent?.getStringExtra("caller_name") ?: "",
+                                callerAvatar = intent?.getStringExtra("caller_avatar") ?: "",
+                                calleeId   = intent?.getStringExtra("callee_id")   ?: "",
+                                calleeName = intent?.getStringExtra("callee_name") ?: "",
+                                calleeAvatar = intent?.getStringExtra("callee_avatar") ?: "",
+                                checksum   = intent?.getStringExtra("checksum")    ?: "",
+                            ),
+                            callService = service
+                        )
+                    }
+                }
+                else -> {
+                    Log.i("SDK CALL", "callServiceConnection: unexpected action ${intent?.action}")
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            bound = false
+            callService = null
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Lifecycle
+    // ─────────────────────────────────────────────────────────────
+
+    @SuppressLint("SourceLockedOrientationActivity")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
+        // Tampilkan Activity di atas lock screen
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
+
+        // Merge metadata dari intent (override default strings)
+        metaData = mergeMetaData(intent)
+
+        // Cek permission mic sebelum apapun
+        isMicPermissionGranted = checkMicPermissionGranted()
+        if (!isMicPermissionGranted) {
+            val everRequested = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_MIC_REQUESTED, false)
+            isMicPermanentlyDenied = everRequested && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+            showMicPermissionDialog = true
+        }
+
+        // Untuk incoming: bind IncomingCallService yang sudah running
+        if (intent.action == CiCareCallService.ACTION.INCOMING) {
             Intent(this, IncomingCallService::class.java).also {
                 bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
             }
+            isOutgoingCall = false
+        } else {
+            isOutgoingCall = true
+        }
+
+        networkObserver = NetworkObserver(this) { isConnected ->
+            if (!isConnected) {
+                callEventListener?.onError(100, "No internet connection")
+                onNetworkError(
+                    state = metaData["call_failed_no_connection"]?.toString()
+                        ?: "No internet connection",
+                    systemError = false
+                )
+            }
+        }
+
+        val callerName  = intent.getStringExtra("caller_name")  ?: "Unknown"
+        val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
+        val calleeName  = intent.getStringExtra("callee_name")  ?: "Unknown"
+        val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
+        val callType    = intent.getStringExtra("call_type")    ?: "outgoing"
+
+        enableEdgeToEdge()
+        setContent {
+            val callStatusRaw by viewModel.callStatusRaw.collectAsState()
+
+            // Tampilkan dialog permission jika mic belum di-grant
+            if (!isMicPermissionGranted  && showMicPermissionDialog) {
+                ShowDialogAskPermission()
+            }
+
+            // Tampilkan error dialog jika ada network/API error
+            if (showErrorDialog) {
+                ShowErrorDialog(
+                    message = networkErrorText,
+                    onDismiss = {
+                        showErrorDialog = false
+                        if (isSystemError) finish()
+                    }
+                )
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                CallScreen(
+                    callerName   = if (callType == "incoming") callerName else calleeName,
+                    callTimer    = if (callStatusRaw == "connected")
+                        formatElapsedTime(timeTicker)
+                    else
+                        metaData["call_$callStatusRaw"]?.toString() ?: callStatusRaw,
+                    callStatusRaw = callStatusRaw,
+                    signalState  = if (connectionState == "connected") "" else connectionState,
+                    avatarUrl    = if (callType == "incoming") callerAvatar else calleeAvatar,
+                    isMicMuted   = isMicMuted,
+                    isSpeakerOn  = isSpeakerOn,
+                    isOnBluetooth = isOnBluetooth,
+                    metaData     = metaData.mapKeys { it.key.toString() }
+                        .mapValues { it.value.toString() },
+                    onMuteClick = {
+                        isMicMuted = !isMicMuted
+                        callService?.setMute(isMicMuted)
+                    },
+                    onSpeakerClick = {
+                        isSpeakerOn = !isSpeakerOn
+                        callService?.setSpeaker(isSpeakerOn)
+                    },
+                    onMessageClick = null,
+                    onAnswerCallClick = {
+                        // Tombol answer di UI (hanya muncul saat incoming & status = "incoming")
+                        if (isMicPermissionGranted) {
+                            proceedAnswerCall()
+                        } else {
+                            // Tampilkan dialog permission — user belum grant saat tap answer
+                            showMicPermissionDialog = true
+                        }
+                    },
+                    onEndCallClick = {
+                        if (callType == "incoming" && callStatusRaw != "connected") {
+                            // Incoming belum tersambung → reject
+                            doReject()
+                        } else if (callStatusRaw == "calling" ||
+                            callStatusRaw == "connecting" ||
+                            callStatusRaw == "ringing") {
+                            // Outgoing masih ringing → cancel
+                            callService?.cancelCall()
+                            finish()
+                        } else {
+                            hangup()
+                        }
+                    },
+                )
+            }
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (!bound) {
-            val intent =
-                    Intent(this, CiCareCallService::class.java).also {
-                        bindService(it, callServiceConnection, BIND_AUTO_CREATE)
-                    }
-            startService(intent)
+    /**
+     * Dipanggil setiap Activity menjadi visible.
+     * Gunakan serviceStarted sebagai guard agar tidak double-bind.
+     */
+    override fun onStart() {
+        super.onStart()
+        networkObserver.start()
+
+        // Guard: hanya start service sekali per sesi Activity
+        if (!serviceStarted && isMicPermissionGranted) {
+            startCallService()
         }
     }
 
     override fun onStop() {
         super.onStop()
         networkObserver.stop()
-        /*if (bound) {
-            callService?.forceStop()
-            unbindService(callServiceConnection)
-            bound = false
-        }
-        if (inbound) {
-            unbindService(incomingServiceConnection)
-            inbound = false
-        }*/
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    /**
+     * Dipanggil saat intent baru dikirim ke Activity yang sudah ada di back stack
+     * (via FLAG_ACTIVITY_CLEAR_TOP dari notifikasi ACCEPT / HANGUP).
+     */
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        when (intent?.action) {
-            CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
-        }
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                callService?.getCallStateFlow()?.collect { viewModel.updateState(it) }
-            }
-        }
-        callService?.setCallEventListener(eventListener)
-        callService?.setConnectionStateListener(connectionLister)
-        // handle update state or extras here
-    }
-
-    //    private fun requestAudioFocus() {
-    //        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-    //        /*val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-    //            .setOnAudioFocusChangeListener { /* optional */ }
-    //            .build()*/
-    //        //audioManager.requestAudioFocus(focusRequest)
-    //        Log.i("SDK Call", "Audio focus")
-    //        val audioAttributes = AudioAttributes.Builder()
-    //            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-    //            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-    //            .build()
-    //
-    //        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-    //            .setAudioAttributes(audioAttributes)
-    //            .setAcceptsDelayedFocusGain(false)
-    //            .setOnAudioFocusChangeListener { /* handle focus change */ }
-    //            .build()
-    //
-    //        audioManager.requestAudioFocus(focusRequest)
-    //    }
-
-    private val requiredPermissions =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    )
-
-    @RequiresApi(Build.VERSION_CODES.P)
-    private val requiredPermissions28 =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.FOREGROUND_SERVICE,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    )
-
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private val requiredPermissionsTirmaisu =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.FOREGROUND_SERVICE,
-                    android.Manifest.permission.POST_NOTIFICATIONS,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    )
-
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private val requiredPermissionsUpsideDownCake =
-            arrayOf(
-                    android.Manifest.permission.RECORD_AUDIO,
-                    android.Manifest.permission.FOREGROUND_SERVICE,
-                    android.Manifest.permission.POST_NOTIFICATIONS,
-                    android.Manifest.permission.BLUETOOTH_CONNECT,
-                    // android.Manifest.permission.READ_PHONE_STATE,
-                    android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE,
-            )
-
-    fun isForegroundMicPermissionGranted(): Boolean {
-        val recordAudioGranted =
-                ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) ==
-                        PackageManager.PERMISSION_GRANTED
-
-        val notificationGranted =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    ContextCompat.checkSelfPermission(
-                            this,
-                            android.Manifest.permission.POST_NOTIFICATIONS
-                    ) == PackageManager.PERMISSION_GRANTED
-                } else true
-
-        val fgMicGranted =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    ContextCompat.checkSelfPermission(
-                            this,
-                            android.Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
-                    ) == PackageManager.PERMISSION_GRANTED
-                } else true
-
-        return recordAudioGranted && notificationGranted && fgMicGranted
-    }
-
-    private val pendingPermissionCallbacks = mutableListOf<(Boolean) -> Unit>()
-
-    private val settingsLauncher =
-            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                val permissions =
-                        when {
-                            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
-                            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ->
-                                    requiredPermissions28
-                            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                                    requiredPermissionsTirmaisu
-                            else -> requiredPermissionsUpsideDownCake
-                        }
-                val allGranted =
-                        permissions.all {
-                            ContextCompat.checkSelfPermission(this, it) ==
-                                    PackageManager.PERMISSION_GRANTED
-                        }
-                if (allGranted) {
-                    permissionGranted = true
-                    val callbacksToRun = pendingPermissionCallbacks.toList()
-                    pendingPermissionCallbacks.clear()
-                    callbacksToRun.forEach { it.invoke(true) }
+        when (intent.action) {
+            CiCareCallService.ACTION.ACCEPT -> {
+                if (isMicPermissionGranted) {
+                    // Service sudah bound, langsung jawab
+                    callService?.answerCall(intent, true)
                 } else {
-                    showPermissionDialog = true
+                    showMicPermissionDialog = true
                 }
             }
-
-    private val permissionLauncher =
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result
-                ->
-                val allGranted = result.values.all { it }
-                permissionGranted = allGranted
-
-                if (!allGranted) {
-                    showPermissionDialog = true
-                } else {
-                    val callbacksToRun = pendingPermissionCallbacks.toList()
-                    pendingPermissionCallbacks.clear()
-                    callbacksToRun.forEach { it.invoke(true) }
-                }
-            }
-
-    private fun checkAndRequestPermissions(onResult: (Boolean) -> Unit) {
-        val permissions =
-                when {
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> requiredPermissions
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> requiredPermissions28
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                            requiredPermissionsTirmaisu
-                    else -> requiredPermissionsUpsideDownCake
-                }
-
-        val notGranted =
-                permissions.filter {
-                    ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-                }
-
-        if (notGranted.isEmpty()) {
-            onResult(true)
-            return
-        }
-
-        pendingPermissionCallbacks.add(onResult)
-        permissionLauncher.launch(notGranted.toTypedArray())
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        networkObserver =
-                NetworkObserver(this) { isConnected ->
-                    if (isConnected) {} else {
-                        callEventListener?.onError(100, "No internet connection")
-                        onNetworkError(
-                                state =
-                                        (metaData["call_failed_no_connection"]
-                                                ?: "No internet connection") as String,
-                                systemError = false
-                        )
-                    }
-                }
-
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-
-        // Untuk Outgoing call, PermissionRequestActivity sudah menjamin permission granted.
-        // Langsung set synchronous agar tidak ada race condition dengan onServiceConnected.
-        if (intent?.action == CiCareCallService.ACTION.OUTGOING) {
-            permissionGranted = isForegroundMicPermissionGranted()
-        } else {
-            checkAndRequestPermissions { permissionGranted = it }
-        }
-
-        window.addFlags(
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-        )
-
-        val context = this
-        val myIntent = intent
-        //        requestAudioFocus()
-
-        when (intent?.action) {
-            CiCareCallService.ACTION.INCOMING ->
-                    lifecycleScope.launch {
-                        checkAndRequestPermissions { granted ->
-                            if (granted) {
-                                isOutgoingCall = false
-                                val intent =
-                                        Intent(context, CiCareCallService::class.java)
-                                                .apply {
-                                                    action = CiCareCallService.ACTION.INCOMING
-                                                    putExtras(myIntent)
-                                                }
-                                                .also {
-                                                    bindService(
-                                                            it,
-                                                            callServiceConnection,
-                                                            BIND_AUTO_CREATE
-                                                    )
-                                                }
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    startForegroundService(intent)
-                                } else {
-                                    startService(intent)
-                                }
-                                callService?.let { it.callState.value = "incoming" }
-                            } else {
-                                callEventListener?.onError(101, "Permission denied")
-                                // Use intelligent hangup which will call reject() for incoming
-                                // calls
-                                hangup()
-                            }
-                        }
-                    }
-            CiCareCallService.ACTION.OUTGOING ->
-                    lifecycleScope.launch {
-                        // Outgoing is already pre-checked by PermissionRequestActivity before
-                        // launching this Activity
-                        isOutgoingCall = true
-                        val outgoingIntent =
-                                Intent(context, CiCareCallService::class.java)
-                                        .apply {
-                                            action = CiCareCallService.ACTION.OUTGOING
-                                            putExtras(myIntent)
-                                        }
-                                        .also {
-                                            bindService(it, callServiceConnection, BIND_AUTO_CREATE)
-                                        }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(outgoingIntent)
-                        } else {
-                            startService(outgoingIntent)
-                        }
-                        // callService di-handle oleh onServiceConnected, tidak perlu memanggil di
-                        // sini
-                        // karena callService masih null saat ini (binding asinkron)
-                    }
-            CiCareCallService.ACTION.ACCEPT -> lifecycleScope.launch { answer() }
-            CiCareCallService.ACTION.REJECT -> hangup()
-        }
-
-        val callerName = intent.getStringExtra("caller_name") ?: "Unknown"
-        val callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-        val calleeName = intent.getStringExtra("callee_name") ?: "unknown"
-        val calleeAvatar = intent.getStringExtra("callee_avatar") ?: ""
-        val callType = intent.getStringExtra("call_type") ?: "outgoing"
-
-        metaData =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val extra =
-                            intent.getSerializableExtra("meta_data", HashMap::class.java)
-                                    ?.mapNotNull {
-                                        val key = it.key as? String
-                                        val value = it.value as? String
-                                        if (key != null && value != null) key to value else null
-                                    }
-                                    ?.toMap()
-                                    ?: emptyMap()
-                    HashMap(metaData + extra)
-                } else {
-                    val extra =
-                            (intent.getSerializableExtra("meta_data") as? HashMap<*, *>)
-                                    ?.mapNotNull {
-                                        val key = it.key as? String
-                                        val value = it.value as? String
-                                        if (key != null && value != null) key to value else null
-                                    }
-                                    ?.toMap()
-                                    ?: emptyMap()
-                    HashMap(metaData + extra)
-                }
-        enableEdgeToEdge()
-        setContent {
-            val callStatusRaw by viewModel.callStatusRaw.collectAsState()
-            Box(modifier = Modifier.fillMaxSize()) {
-                CallScreen(
-                        callerName = if (callType == "incoming") callerName else calleeName,
-                        callTimer =
-                                if (callStatusRaw == "connected") formatElapsedTime(timeTicker)
-                                else metaData["call_$callStatusRaw"] ?: callStatusRaw,
-                        callStatusRaw = callStatusRaw,
-                        signalState = if (connectionState == "connected") "" else connectionState,
-                        avatarUrl = if (callType == "incoming") callerAvatar else calleeAvatar,
-                        isMicMuted,
-                        isSpeakerOn,
-                        isOnBluetooth,
-                        metaData =
-                                metaData.mapKeys { it.key.toString() }.mapValues {
-                                    it.value.toString()
-                                },
-                        onMuteClick = {
-                            isMicMuted = !isMicMuted
-                            callService?.setMute(isMicMuted)
-                        },
-                        onSpeakerClick = {
-                            isSpeakerOn = !isSpeakerOn
-                            callService?.setSpeaker(isSpeakerOn)
-                        },
-                        onMessageClick = {
-                            listener?.onShowMessagePage()
-                            hangup()
-                        },
-                        onAnswerCallClick = { answer() },
-                        onEndCallClick = {
-                            if (callType == "incoming" && callStatusRaw != "connected") {
-                                incomingService?.reject()
-                            } else {
-                                if (callStatusRaw == "calling" ||
-                                                callStatusRaw == "connecting" ||
-                                                callStatusRaw == "ringing"
-                                ) {
-                                    callService?.cancelCall()
-                                } else {
-                                    hangup()
-                                }
-                            }
-                            finish()
-                        },
-                )
-                ErrorAlertDialog(
-                        showDialog = showErrorDialog,
-                        onDismiss = {
-                            showErrorDialog = false
-                            callService?.hangup()
-                            callService?.forceStop()
-                            incomingService?.forceStop()
-                            finish()
-                        },
-                        withIcon = isSystemError,
-                        message = networkErrorText
-                )
-
-                if (showPermissionDialog) {
-                    androidx.compose.material3.AlertDialog(
-                            onDismissRequest = {
-                                showPermissionDialog = false
-                                val callbacksToRun = pendingPermissionCallbacks.toList()
-                                pendingPermissionCallbacks.clear()
-                                callbacksToRun.forEach { it.invoke(false) }
-                                hangup()
-                            },
-                            title = {
-                                Text(
-                                        text =
-                                                metaData["call_permission_microphone_demied_title"]
-                                                        ?.toString()
-                                                        ?: "Microphone Permission Required"
-                                )
-                            },
-                            text = {
-                                Text(
-                                        text =
-                                                metaData[
-                                                                "call_permission_microphone_demied_content"]
-                                                        ?.toString()
-                                                        ?: "Please enable microphone permission in system settings to make a call."
-                                )
-                            },
-                            confirmButton = {
-                                androidx.compose.material3.TextButton(
-                                        onClick = {
-                                            showPermissionDialog = false
-                                            val intent =
-                                                    Intent(
-                                                            android.provider.Settings
-                                                                    .ACTION_APPLICATION_DETAILS_SETTINGS
-                                                    )
-                                            val uri =
-                                                    android.net.Uri.fromParts(
-                                                            "package",
-                                                            packageName,
-                                                            null
-                                                    )
-                                            intent.data = uri
-                                            settingsLauncher.launch(intent)
-                                        }
-                                ) {
-                                    Text(
-                                            text =
-                                                    metaData["call_permission_btn_setting"]
-                                                            ?.toString()
-                                                            ?: "Go to Settings",
-                                            color = Color(0xFF00BABD)
-                                    )
-                                }
-                            },
-                            dismissButton = {
-                                androidx.compose.material3.TextButton(
-                                        onClick = {
-                                            showPermissionDialog = false
-                                            val callbacksToRun = pendingPermissionCallbacks.toList()
-                                            pendingPermissionCallbacks.clear()
-                                            callbacksToRun.forEach { it.invoke(false) }
-                                            hangup()
-                                        }
-                                ) {
-                                    Text(
-                                            text = metaData["call_permission_btn_deny"]?.toString()
-                                                            ?: "Cancel",
-                                            color = Color.Gray
-                                    )
-                                }
-                            }
-                    )
-                }
-            }
+            CiCareCallService.ACTION.HANGUP -> hangup()
         }
     }
 
     override fun onDestroy() {
-        /*MessageListenerHolder.listener = null
-        callService?.stopSelf()
-        incomingService?.stopSelf()
-        callService?.cancelCall()*/
+        // Lepas semua binding agar service tidak leak
         if (bound) {
-            callService?.forceStop()
-            unbindService(callServiceConnection)
+            try { unbindService(callServiceConnection) } catch (e: Exception) {
+                Log.w("SDK CALL", "unbind callService failed: ${e.message}")
+            }
             bound = false
         }
         if (inbound) {
-            unbindService(incomingServiceConnection)
+            try { unbindService(incomingServiceConnection) } catch (e: Exception) {
+                Log.w("SDK CALL", "unbind incomingService failed: ${e.message}")
+            }
             inbound = false
         }
         super.onDestroy()
     }
 
-    override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {}
+    // ─────────────────────────────────────────────────────────────
+    // CallStateListener
+    // ─────────────────────────────────────────────────────────────
+
+    override fun onCallStateChanged(callState: CallState) {
+        if (Thread.currentThread() != Looper.getMainLooper().thread) {
+            runOnUiThread { onCallStateChanged(callState) }
+            return
+        }
+        callEventListener?.onCallStateChange(callState)
+        if (callState == CallState.CONNECTED) {
+            hasBeenConnected = true
+        }
+
+        when (callState) {
+            CallState.ANSWERING -> {
+                // Callee sudah jawab, IncomingCallService tidak diperlukan lagi
+                incomingService?.forceStop()
+                if (inbound) {
+                    try { unbindService(incomingServiceConnection) } catch (_: Exception) {}
+                    inbound = false
+                    incomingService = null
+                }
+                viewModel.updateState(metaData["call_connecting"]?.toString() ?: "connecting")
+            }
+
+            CallState.CONNECTED -> {
+                hasBeenConnected = true
+            }
+
+            CallState.TIMEOUT, CallState.MISSED -> {
+                viewModel.updateState(metaData["call_end"]?.toString() ?: "end")
+                tearDownCallService()
+                val isIncomingMissed = !isOutgoingCall && !hasBeenConnected
+                if (isIncomingMissed) {
+                    try {
+                        incomingService?.showMissedCallNotification()
+                    } catch (e: SecurityException) {
+                        incomingService?.forceStop()
+                        Log.e("SDK CALL", "showMissedCallNotification: ${e.message}", e.cause)
+                    }
+                    finish()
+                } else {
+                    finishWithDelay()
+                }
+            }
+
+            CallState.END, CallState.REFUSED, CallState.BUSY -> {
+                val stateKey = "call_${callState.name.lowercase(Locale.ROOT)}"
+                viewModel.updateState(metaData[stateKey]?.toString() ?: callState.name.lowercase())
+                tearDownCallService()
+
+                val isIncomingCancelled = !isOutgoingCall &&
+                        callState == CallState.END && !hasBeenConnected
+                if (isIncomingCancelled) {
+                    try {
+                        incomingService?.showMissedCallNotification()
+                    } catch (e: SecurityException) {
+                        incomingService?.forceStop()
+                        Log.e("SDK CALL", "showMissedCallNotification: ${e.message}", e.cause)
+                    }
+                    finish()
+                } else {
+                    finishWithDelay()
+                }
+            }
+
+            else -> { /* CALLING, RINGING, CONNECTING — UI diupdate via StateFlow */ }
+        }
+    }
+
+    override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
+        // Bisa digunakan untuk animasi koneksi di masa depan
+    }
 
     override fun onTimeTicketUpdate(seconds: Long) {
         timeTicker = seconds
     }
 
-    override fun onCallStateChanged(callState: CallState) {
-        callEventListener?.onCallStateChange(callState)
-        if (callState == CallState.CONNECTED) {
-            hasBeenConnected = true
-        }
-        // Log.i("HELLO", "RUN TIMER")
-        // callStatusRaw = callState.toString().lowercase()
-        /*when (callState) {
-            CallState.RINGING -> callStatus = "ringing"
-            CallState.CONNECTED -> callStatus = "connected"
-            CallState.ENDED -> {
-                callStatus = callState.name.lowercase()
-                finish()
-            }
-            else -> callStatus = callStatusRaw
-        }*/
+    override fun onSignalStateChanged(state: String) {
+        if (state.isEmpty()) return
+        connectionState = if (
+            callService?.callState?.value?.lowercase(Locale.ROOT) == "connected" &&
+            state == "connected"
+        ) "" else state
+    }
 
-        // if (callState == CallState.CONNECTED) {
-        // Log.i("SCREEN", "RUN TIMER")
-        // // Start timer
-        // callSeconds = 0
-        // callDurationJob?.cancel()
-        // callDurationJob = CoroutineScope(Dispatchers.Main).launch {
-        // while (isActive) {
-        // delay(1000)
-        // callSeconds++
-        // callTimer = formatTime(callSeconds)
-        // }
-        // }
-        // } else
-        if (callState == CallState.TIMEOUT ||
-                        callState == CallState.END ||
-                        callState == CallState.REFUSED ||
-                        callState == CallState.BUSY ||
-                        callState == CallState.MISSED
-        ) {
+    override fun onNetworkError(state: String, systemError: Boolean) {
+        showErrorDialog = true
+        isSystemError = systemError
+        networkErrorText = state
+        Log.i("SDK CALL NETWORK_ERROR", state)
+    }
 
-            if (callState == CallState.TIMEOUT || callState == CallState.MISSED) {
-                viewModel.updateState(metaData["call_end"].toString())
-            } else {
-                viewModel.updateState(metaData["call_" + callState.name.lowercase()].toString())
-            }
-            if (bound) {
-                callService?.forceStop()
-                unbindService(callServiceConnection)
-                bound = false
-            }
+    // ─────────────────────────────────────────────────────────────
+    // Internal helpers
+    // ─────────────────────────────────────────────────────────────
 
-            // Jika incoming call dan caller membatalkan sebelum terhubung:
-            // tutup layar langsung tanpa delay
-            val isIncomingAndCancelled =
-                    !isOutgoingCall &&
-                            (callState == CallState.END || callState == CallState.MISSED) &&
-                            !hasBeenConnected
-            if (isIncomingAndCancelled) {
-                // Tampilkan missed call dan tutup activity langsung
-                try {
-                    incomingService?.showMissedCallNotification()
-                } catch (e: SecurityException) {
-                    incomingService?.forceStop()
-                }
-                finish()
-            } else {
-                Handler(Looper.getMainLooper())
-                        .postDelayed(
-                                { finish() },
-                                2000
-                        ) // 2 detik delay untuk outgoing agar status text terlihat
-            }
-        } else if (callState == CallState.ANSWERING) {
-            incomingService?.forceStop()
-            viewModel.updateState(metaData["call_connecting"].toString())
+    /**
+     * Cek apakah RECORD_AUDIO (dan FOREGROUND_SERVICE_MICROPHONE di API 34+) sudah granted.
+     */
+    private fun checkMicPermissionGranted(): Boolean {
+        val recordAudio = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val fgMic = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
+            ) == PackageManager.PERMISSION_GRANTED
+        } else true
+
+        return recordAudio && fgMic
+    }
+
+    /**
+     * Dipanggil setelah permission mic granted (dari launcher atau kembali dari Settings).
+     * Jika incoming: lanjutkan answer. Jika belum ada service & outgoing: start service.
+     */
+    private fun onMicPermissionGranted() {
+        if (!serviceStarted) {
+            startCallService()
+        } else if (!isOutgoingCall) {
+            // Sudah masuk onStart tapi service belum distart karena permission belum grant
+            proceedAnswerCall()
         }
     }
 
-    private fun answer() {
-        checkAndRequestPermissions { granted ->
-            if (granted) {
-                Log.i("SDK CALL", "ANSWERED CALL")
+    /**
+     * Start dan bind CiCareCallService berdasarkan action intent.
+     * Hanya dijalankan sekali berkat flag serviceStarted.
+     *
+     * - INCOMING : tidak start CiCareCallService di sini.
+     *              Service distart nanti saat proceedAnswerCall() → answerCall().
+     * - OUTGOING/ACCEPT : start + bind langsung, aksi dilanjutkan di onServiceConnected.
+     */
+    private fun startCallService() {
+        when (intent?.action) {
+            CiCareCallService.ACTION.INCOMING -> {
+                // Tidak perlu start CiCareCallService.
+                // Hanya perlu pastikan IncomingCallService sudah bound (dilakukan di onCreate).
+                // serviceStarted ditandai agar onStart tidak mencoba lagi.
+                serviceStarted = true
+                isOutgoingCall = false
+            }
 
-                // Clear notification explicitly and stop hanging service
-                val notificationManager = androidx.core.app.NotificationManagerCompat.from(this)
-                notificationManager.cancel(104)
-                try {
-                    stopService(Intent(this, IncomingCallService::class.java))
-                } catch (e: Exception) {
-                    Log.e("SDK CALL", "Error stopping service \${e.message}")
+            CiCareCallService.ACTION.OUTGOING,
+            CiCareCallService.ACTION.ACCEPT -> {
+                serviceStarted = true
+                isOutgoingCall = true
+
+                // Hentikan incoming service jika masih ada (skenario: accept dari notif)
+                incomingService?.forceStop()
+
+                val svcIntent = Intent(this, CiCareCallService::class.java).apply {
+                    action = intent?.action
+                    intent?.extras?.let { putExtras(it) }
+                }.also {
+                    bindService(it, callServiceConnection, BIND_AUTO_CREATE)
                 }
 
-                incomingService?.forceStop()
-                callService?.answerCall(intent, true)
-            } else {
-                callEventListener?.onError(101, "Permission denied")
-                // Notify server that call is rejected due to permission
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(svcIntent)
+                } else {
+                    startService(svcIntent)
+                }
+            }
+
+            CiCareCallService.ACTION.REJECT -> {
+                serviceStarted = true
                 hangup()
             }
         }
     }
 
-    private fun hangup() {
-        val currentState = callService?.callState?.value?.lowercase(Locale.ROOT) ?: ""
-        val currentAction = intent?.action ?: "UNKNOWN"
-        val callType = intent?.getStringExtra("call_type") ?: ""
+    /**
+     * Dipanggil setelah mic permission granted dan user memilih untuk menjawab panggilan.
+     * Untuk INCOMING: baru di sini CiCareCallService distart dan answerCall dipanggil.
+     * Untuk OUTGOING: tidak digunakan (flow berbeda via requestOutgoingCall).
+     */
+    private fun proceedAnswerCall() {
+        // Batalkan notifikasi incoming
+        NotificationManagerCompat.from(this).cancel(104)
 
-        Log.i(
-                "SDK CALL",
-                "Hangup requested. Action: $currentAction, Type: $callType, State: $currentState"
-        )
-
-        if ((currentAction == "INCOMING" || callType == "incoming") && currentState != "connected"
-        ) {
-            // For incoming calls not yet connected, send REJECT via IncomingCallService
-            if (inbound && incomingService != null) {
-                incomingService?.reject()
-            } else {
-                // Fallback: start IncomingCallService with REJECT action
-                val serviceIntent =
-                        Intent(this, IncomingCallService::class.java).apply {
-                            action = CiCareCallService.ACTION.REJECT
-                            intent?.extras?.let { putExtras(it) }
-                        }
-                startService(serviceIntent)
-            }
-        } else {
-            // For other states or outgoing calls
-            if (bound && callService != null) {
-                callService?.hangup()
-            } else {
-                // Fallback: start CiCareCallService with HANGUP action
-                val serviceIntent =
-                        Intent(this, CiCareCallService::class.java).apply {
-                            action = CiCareCallService.ACTION.HANGUP
-                            intent?.extras?.let { putExtras(it) }
-                        }
-                startService(serviceIntent)
-            }
+        // Hentikan IncomingCallService
+        incomingService?.forceStop()
+        if (inbound) {
+            try { unbindService(incomingServiceConnection) } catch (_: Exception) {}
+            inbound = false
+            incomingService = null
+        }
+        try {
+            stopService(Intent(this, IncomingCallService::class.java))
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "stopService IncomingCallService: ${e.message}")
         }
 
+        if (bound && callService != null) {
+            // Service sudah bound (misal dari ACCEPT action) → langsung answer
+            callService?.answerCall(intent, true)
+        } else {
+            // Service belum ada → start + bind, answerCall dipanggil di onServiceConnected
+            val svcIntent = Intent(this, CiCareCallService::class.java).apply {
+                action = CiCareCallService.ACTION.ACCEPT
+                intent?.extras?.let { putExtras(it) }
+            }.also {
+                bindService(it, callServiceConnection, BIND_AUTO_CREATE)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(svcIntent)
+            } else {
+                startService(svcIntent)
+            }
+            serviceStarted = true
+        }
+    }
+
+    /**
+     * Hit API untuk mendapatkan server + token, lalu initCall ke CiCareCallService.
+     */
+    private suspend fun requestOutgoingCall(callInfo: CallInfo, callService: CiCareCallService) {
+        if (!checkInternetConnection()) {
+            Log.i("SDK CALL", "NO INTERNET")
+            callEventListener?.onError(100, "No internet connection")
+            onNetworkError(
+                state = metaData["call_failed_no_connection"]?.toString()
+                    ?: "No internet connection",
+                systemError = false
+            )
+            return
+        }
+        try {
+            when (val result = CallRepository.requestCall(
+                CallRequest(
+                    callerId     = callInfo.callerId,
+                    callerName   = callInfo.callerName,
+                    callerAvatar = callInfo.callerAvatar,
+                    calleeId     = callInfo.calleeId,
+                    calleeName   = callInfo.calleeName,
+                    calleeAvatar = callInfo.calleeAvatar,
+                    checkSum     = callInfo.checksum,
+                )
+            )) {
+                is CallResult.Success -> {
+                    val data = result.data
+                    Log.i("SDK CALL", "requestOutgoingCall success: ${data.callee}")
+                    callService.initCall(data.server, data.token)
+                }
+                is CallResult.Failure -> {
+                    Log.e("SDK CALL", "requestOutgoingCall error: ${result.error.code} - ${result.error.message}")
+                    handleOutgoingCallFailure(result.error.code, result.error.message)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "requestOutgoingCall exception: ${e.message}", e)
+            callEventListener?.onError(500, "Call failed due to system error")
+            onNetworkError(
+                state = metaData["call_failed_api"]?.toString() ?: "Call failed due to system error",
+                systemError = true
+            )
+        }
+    }
+
+    private fun handleOutgoingCallFailure(code: Int, rawMessage: String) {
+        try {
+            val json = JSONObject(rawMessage)
+            val innerCode = json.optInt("code", -1)
+            val innerMsg  = json.optString("message", rawMessage)
+            if (code == 400 && innerCode == 3) {
+                callEventListener?.onError(innerCode, innerMsg)
+                onNetworkError(
+                    state = metaData[innerMsg]?.toString() ?: innerMsg,
+                    systemError = false
+                )
+            } else {
+                callEventListener?.onError(code, innerMsg)
+                onNetworkError(
+                    state = metaData["call_failed_api"]?.toString() ?: "Call failed due to system error",
+                    systemError = true
+                )
+            }
+        } catch (e: Exception) {
+            callEventListener?.onError(500, "Call failed due to system error")
+            onNetworkError(
+                state = metaData["call_failed_api"]?.toString() ?: "Call failed due to system error",
+                systemError = true
+            )
+        }
+    }
+
+    /**
+     * Tolak panggilan incoming.
+     * Prioritas: via incomingService (sudah bound) → fallback via startService REJECT.
+     */
+    private fun doReject() {
+        if (inbound && incomingService != null) {
+            incomingService?.reject()
+        } else {
+            // Fallback: kirim REJECT action ke IncomingCallService yang mungkin masih hidup.
+            // Pastikan extras diteruskan agar service punya caller_id untuk socket.
+            val svcIntent = Intent(this, IncomingCallService::class.java).apply {
+                action = CiCareCallService.ACTION.REJECT
+                intent?.extras?.let { putExtras(it) }
+            }
+            startService(svcIntent)
+        }
         finish()
+    }
+
+    /**
+     * Hangup general — digunakan untuk outgoing/connected call.
+     * Untuk reject incoming sebelum tersambung, gunakan doReject().
+     */
+    private fun hangup() {
+        val currentState  = callService?.callState?.value?.lowercase(Locale.ROOT) ?: ""
+        val currentAction = intent?.action ?: ""
+        val callType      = intent?.getStringExtra("call_type") ?: ""
+
+        Log.i("SDK CALL", "hangup() action=$currentAction type=$callType state=$currentState")
+
+        if ((currentAction == CiCareCallService.ACTION.INCOMING || callType == "incoming")
+            && currentState != "connected") {
+            doReject()
+            return
+        }
+
+        if (bound && callService != null) {
+            callService?.hangup()
+        } else {
+            val svcIntent = Intent(this, CiCareCallService::class.java).apply {
+                action = CiCareCallService.ACTION.HANGUP
+                intent?.extras?.let { putExtras(it) }
+            }
+            startService(svcIntent)
+        }
+        finish()
+    }
+
+    /**
+     * Lepas binding dan stop CiCareCallService secara aman.
+     * unbindService dipanggil dulu, baru forceStop — bukan sebaliknya.
+     */
+    private fun tearDownCallService() {
+        if (bound) {
+            try { unbindService(callServiceConnection) } catch (e: Exception) {
+                Log.w("SDK CALL", "tearDownCallService unbind: ${e.message}")
+            }
+            bound = false
+            callService?.forceStop()
+            callService = null
+        }
+    }
+
+    /** Tutup Activity setelah 2 detik (memberi waktu UI menampilkan status akhir). */
+    private fun finishWithDelay() {
+        window.decorView.postDelayed({ if (!isFinishing) finish() }, 2000)
+    }
+
+    private fun checkInternetConnection(): Boolean {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     @SuppressLint("DefaultLocale")
     private fun formatElapsedTime(seconds: Long): String {
-        val minutes = seconds / 60
-        val secs = seconds % 60
-        return String.format("%02d:%02d", minutes, secs)
+        return String.format("%02d:%02d", seconds / 60, seconds % 60)
     }
 
-    override fun onSignalStateChanged(state: String) {
-        if (state == "") return
-        if (callService?.callState == MutableStateFlow("connected")) {
-            connectionState = if (state == "connected") "" else state
+    /**
+     * Merge metadata dari intent dengan default metaData.
+     * Mendukung API 33+ (getSerializableExtra dengan Class) dan di bawahnya.
+     */
+    @Suppress("DEPRECATION")
+    private fun mergeMetaData(intent: Intent): HashMap<*, *> {
+        val extra: Map<String, String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getSerializableExtra("meta_data", HashMap::class.java)
+                ?.mapNotNull {
+                    val k = it.key as? String
+                    val v = it.value as? String
+                    if (k != null && v != null) k to v else null
+                }?.toMap() ?: emptyMap()
         } else {
-            connectionState = state
+            (intent.getSerializableExtra("meta_data") as? HashMap<*, *>)
+                ?.mapNotNull {
+                    val k = it.key as? String
+                    val v = it.value as? String
+                    if (k != null && v != null) k to v else null
+                }?.toMap() ?: emptyMap()
         }
-        if (connectionState == "lost") {
-            hangup()
-        }
+        return HashMap(metaData + extra)
     }
 
-    override fun onNetworkError(state: String, systemError: Boolean) {
-        showErrorDialog = true
-        Log.i("NETWORK_ERROR", state)
-        isSystemError = systemError
-        networkErrorText = state
-    }
+    // ─────────────────────────────────────────────────────────────
+    // Composables
+    // ─────────────────────────────────────────────────────────────
 
-    //    private fun _e(key: String, hashMap: Map<*, *>): Any {
-    //        return hashMap[key] ?: key
-    //    }
-
-}
-
-@Composable
-fun CallScreen(
-        callerName: String,
-        callTimer: Any,
-        callStatusRaw: String,
-        signalState: String,
-        avatarUrl: String,
-        isMicMuted: Boolean,
-        isSpeakerOn: Boolean,
-        isOnBluetooth: Boolean,
-        metaData: Map<String, String>,
-        onMuteClick: () -> Unit,
-        onSpeakerClick: () -> Unit,
-        onMessageClick: () -> Unit,
-        onAnswerCallClick: () -> Unit,
-        onEndCallClick: () -> Unit
-) {
-    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-        Box {
-            MultiLayerGradientBackground()
-
-            Column(
-                    modifier = Modifier.padding(padding).fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(modifier = Modifier.height(20.dp))
+    /**
+     * Dialog pertama yang muncul ketika mic permission belum di-grant.
+     * - Confirm: request permission via micPermissionLauncher
+     * - Dismiss: reject call dan tutup Activity
+     *
+     * Ketika isMicPermanentlyDenied = true:
+     * - Confirm: buka Settings via micSettingsLauncher
+     * - Dismiss: reject call
+     */
+    @Composable
+    private fun ShowDialogAskPermission() {
+        AlertDialog(
+            onDismissRequest = {
+                showMicPermissionDialog = false
+                hangup()
+            },
+            title = {
+                Text(
+                    text = if (isMicPermanentlyDenied)
+                        metaData["call_permission_microphone_denied_title"]?.toString()
+                            ?: "Microphone access is required to make a call"
+                    else
+                        metaData["call_permission_microphone_title"]?.toString()
+                            ?: "Microphone Permission"
+                )
+            },
+            text = {
+                Text(
+                    text = if (isMicPermanentlyDenied)
+                        metaData["call_permission_microphone_denied_content"]?.toString()
+                            ?: "Please enable microphone access in your phone's Settings"
+                    else
+                        metaData["call_permission_microphone_content"]?.toString()
+                            ?: "We need access to your microphone to make calls"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showMicPermissionDialog = false
+                        if (isMicPermanentlyDenied) {
+                            micSettingsLauncher.launch(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                }
+                            )
+                        } else {
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                ) {
                     Text(
-                            text = metaData["call_title"] ?: "Free Call",
-                            style = MaterialTheme.typography.headlineSmall
+                        text = if (isMicPermanentlyDenied)
+                            metaData["call_permission_btn_setting"]?.toString() ?: "Go to Settings"
+                        else
+                            metaData["call_permission_btn_allow"]?.toString() ?: "Allow",
+                        color = Color(0xFF00BABD)
                     )
-
-                    Spacer(modifier = Modifier.height(60.dp))
                 }
-
-                // Avatar
-                Row(
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = callTimer as String, style = MaterialTheme.typography.bodyLarge)
-                        Spacer(modifier = Modifier.height(55.dp))
-                        CallAvatar(avatarUrl)
-                        Spacer(modifier = Modifier.height(35.dp))
-
-                        Text(
-                                text =
-                                        if (metaData["call_name_title"]?.isBlank() == true)
-                                                callerName
-                                        else metaData["call_name_title"] ?: callerName,
-                                style = MaterialTheme.typography.headlineSmall
-                        )
-                        Spacer(modifier = Modifier.height(15.dp))
-                        Text(
-                                text = metaData[signalState] ?: signalState, // ->status network
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Red
-                        )
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showMicPermissionDialog = false
+                        hangup()
                     }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-
-                //
-                Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier =
-                                Modifier.fillMaxWidth()
-                                        .padding(horizontal = 32.dp, vertical = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RoundIconButton(
-                            icon =
-                                    if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp
-                                    else {
-                                        if (isOnBluetooth) SpeakerBluetooth
-                                        else Icons.AutoMirrored.Outlined.VolumeUp
-                                    },
-                            label = metaData["call_btn_speaker"] ?: "Speaker",
-                            onClick = onSpeakerClick,
-                            backgroundColor =
-                                    if (isSpeakerOn) Color(0xFF00BABD) else Color(0xFFE9F8F9),
-                            iconTint = if (isSpeakerOn) Color.White else Color(0xFF17666A),
-                            enabled = callStatusRaw.lowercase() != "ended"
+                    Text(
+                        text = metaData["call_permission_btn_deny"]?.toString() ?: "Cancel",
+                        color = Color.Gray
                     )
-
-                    RoundIconButton(
-                            icon = Icons.Default.MicOff,
-                            label = metaData["call_btn_mute"] ?: "Mute",
-                            onClick = onMuteClick,
-                            backgroundColor =
-                                    if (isMicMuted) Color(0xFF00BABD) else Color(0xFFE9F8F9),
-                            iconTint = if (isMicMuted) Color.White else Color(0xFF17666A),
-                            enabled = callStatusRaw.lowercase() == "connected"
-                    )
-
-                    //                if (callStatusRaw.lowercase() == "incoming") {
-                    //                    RoundIconButton(
-                    //                        icon = Icons.AutoMirrored.Outlined.Chat,
-                    //                        label = metaData["call_btn_message"] ?: "Message",
-                    //                        onClick = onMessageClick,
-                    //                        backgroundColor = Color(0xFFE9F8F9),
-                    //                        iconTint = Color(0xFF17666A),
-                    //                    )
-                    //                }
                 }
-                Row(
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 55.dp)
-                ) {
-                    RoundIconButton(
-                            icon = Icons.Filled.Close,
-                            label = "",
-                            onClick = onEndCallClick,
-                            backgroundColor = Color.Red,
-                            iconTint = Color.White,
-                            enabled = callStatusRaw.lowercase() != "ended"
-                    )
-                    if (callStatusRaw.lowercase() == "incoming") {
-                        Spacer(modifier = Modifier.width(160.dp))
-                        RoundIconButton(
-                                icon = Icons.Default.Phone,
-                                label = "",
-                                onClick = onAnswerCallClick,
-                                backgroundColor = Color.Green,
-                                iconTint = Color.White,
-                        )
-                    }
-                }
-                // }
             }
-        }
-    }
-}
-
-@Composable
-fun MultiLayerGradientBackground(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize()) {
-        // Layer 3: Base horizontal gradient (270deg)
-        Box(
-                modifier =
-                        Modifier.matchParentSize()
-                                .background(
-                                        brush =
-                                                Brush.horizontalGradient(
-                                                        colorStops =
-                                                                arrayOf(
-                                                                        0.0f to
-                                                                                Color(
-                                                                                        0xFFFFF4DF
-                                                                                ), // Left becomes
-                                                                        // #FFF4DF
-                                                                        0.5f to Color(0xFFFFFFFF),
-                                                                        1.0f to
-                                                                                Color(
-                                                                                        0xFFDAFFFF
-                                                                                ) // Right becomes
-                                                                        // #DAFFFF
-                                                                        )
-                                                )
-                                )
-        )
-
-        // Layer 2: Vertical fade (180deg)
-        Box(
-                modifier =
-                        Modifier.matchParentSize()
-                                .background(
-                                        brush =
-                                                Brush.verticalGradient(
-                                                        colorStops =
-                                                                arrayOf(
-                                                                        0.3167f to
-                                                                                Color(
-                                                                                        0x00F6F6F6
-                                                                                ), // transparent
-                                                                        1.0f to Color(0xFFF6F6F6)
-                                                                )
-                                                )
-                                )
-        )
-
-        // Layer 1: Diagonal fade (224.7deg ≈ ~45° flip)
-        Box(
-                modifier =
-                        Modifier.matchParentSize()
-                                .background(
-                                        brush =
-                                                Brush.linearGradient(
-                                                        colorStops =
-                                                                arrayOf(
-                                                                        0.3943f to
-                                                                                Color(
-                                                                                        0x00DFEFFF
-                                                                                ), // transparent
-                                                                        1.0f to Color(0xFFEBFFFF)
-                                                                ),
-                                                        start = Offset.Infinite,
-                                                        end = Offset.Zero
-                                                )
-                                )
         )
     }
-}
 
-@Composable
-fun CallAvatar(imageUrl: String?) {
-    if (imageUrl.isNullOrBlank()) {
-        // Tampilkan icon orang jika URL kosong
-        Box(
-                modifier = Modifier.size(160.dp).clip(CircleShape).background(Color.LightGray),
-                contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "Default Avatar",
-                    tint = Color.White,
-                    modifier = Modifier.size(80.dp)
-            )
-        }
-    } else {
-        // Tampilkan gambar dari URL
-        AsyncImage(
-                model = imageUrl,
-                contentDescription = "Caller Avatar",
-                modifier =
-                        Modifier.size(160.dp)
-                                .clip(CircleShape)
-                                .border(2.dp, Color.Gray, CircleShape)
-        )
-    }
-}
-
-@Composable
-fun RoundIconButton(
-        icon: ImageVector,
-        label: String,
-        onClick: () -> Unit,
-        backgroundColor: Color = Color.LightGray,
-        iconTint: Color = Color.Black,
-        enabled: Boolean = true
-) {
-    val actualBackground = if (enabled) backgroundColor else backgroundColor.copy(alpha = 0.4f)
-    val actualTint = if (enabled) iconTint else iconTint.copy(alpha = 0.6f)
-    val textColor = Color(0XFF7F7F7F)
-    val actualText = if (enabled) textColor else textColor.copy(alpha = 0.6f)
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-                modifier =
-                        Modifier.size(64.dp).clip(CircleShape).background(actualBackground).let {
-                            if (enabled) it.clickable(onClick = onClick) else it
-                        },
-                contentAlignment = Alignment.Center
-        ) { Icon(imageVector = icon, contentDescription = label, tint = actualTint) }
-
-        if (label.isNotBlank()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = label, style = MaterialTheme.typography.bodySmall, color = actualText)
-        }
-    }
-}
-
-//
-@Composable
-@Preview
-fun DefaultPreview() {
-    val metaData: HashMap<*, *> =
-            hashMapOf(
-                    "initializing" to "Initializing",
-                    "call_title" to "Telpone gratis",
-                    "ringing" to "Ringing",
-                    "connected" to "Connected",
-                    "ended" to "Ended",
-                    "answer" to "Answer",
-                    "decline" to "Decline",
-                    "mute" to "Mute",
-                    "unmute" to "Unmute",
-                    "speaker" to "Speaker",
-                    "phone_speaker" to "Phone Speaker",
-            )
-    Box(modifier = Modifier.fillMaxSize()) {
-        CallScreen(
-                "Driver Andhi",
-                "",
-                "connected",
-                signalState = "call_lost_connection",
-                "",
-                isMicMuted = true,
-                isSpeakerOn = false,
-                isOnBluetooth = true,
-                metaData = metaData.mapKeys { it.key.toString() }.mapValues { it.value.toString() },
-                onMuteClick = {},
-                onEndCallClick = {},
-                onAnswerCallClick = {},
-                onSpeakerClick = {},
-                onMessageClick = {}
-        )
-        ErrorAlertDialog(
-                showDialog = true,
-                onDismiss = {},
-                withIcon = true,
-                message = "networkErrorText"
+    /**
+     * Dialog error untuk kegagalan jaringan atau API.
+     */
+    @Composable
+    private fun ShowErrorDialog(message: String, onDismiss: () -> Unit) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(text = "Error") },
+            text = { Text(text = message) },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(text = "OK", color = Color(0xFF00BABD))
+                }
+            }
         )
     }
 }

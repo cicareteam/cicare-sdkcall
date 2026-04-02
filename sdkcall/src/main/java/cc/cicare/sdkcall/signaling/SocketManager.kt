@@ -173,8 +173,10 @@ class SocketManager {
             val json = args[0] as JSONObject
             val sdpString = json.getString("sdp")
             if (webRTCManager == null) {
-                Log.e("SocketManager", "SignalingHelper is null! Cannot initRTC")
+                Log.e("SocketManager", "WebRTCManager is null! Cannot handle SDP_OFFER")
             } else {
+                // Close existing connection before re-initializing to prevent resource leak
+                try { webRTCManager?.close() } catch (_: Exception) {}
                 webRTCManager?.init()
                 webRTCManager?.initMic()
             }
@@ -191,10 +193,6 @@ class SocketManager {
         // Ringing event sent to callee to indicate incoming call
         socket?.on("REJECTED") { _ ->
             callStateListener?.onCallStateChanged(CallState.REFUSED)
-        }
-
-        socket?.on("BUSY") { _ ->
-            callStateListener?.onCallStateChanged(CallState.BUSY)
         }
 
         // Received SDP answer from remote peer

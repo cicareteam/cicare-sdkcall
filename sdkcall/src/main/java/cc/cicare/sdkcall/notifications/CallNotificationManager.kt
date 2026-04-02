@@ -15,22 +15,13 @@ import androidx.core.app.Person
 import cc.cicare.sdkcall.notifications.ui.ScreenCallActivity
 import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
-import dagger.Module
-import dagger.Provides
-import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
-import javax.inject.Singleton
 
-@Module
-@InstallIn(SingletonComponent::class)
 object CallNotificationManager {
 
     var ringtoneUrl: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-    @Provides
-    @Singleton
+
     fun provideNotificationManagerCompat(
-        @ApplicationContext context: Context,
+        context: Context,
         channelId: String,
         important: Int
     ): NotificationManagerCompat {
@@ -46,10 +37,8 @@ object CallNotificationManager {
         return notificationManager
     }
 
-    @Provides
-    @Singleton
     fun provideNotificationManagerIncoming(
-        @ApplicationContext context: Context,
+        context: Context,
         channelId: String,
         important: Int
     ): NotificationManagerCompat {
@@ -72,10 +61,8 @@ object CallNotificationManager {
         return notificationManager
     }
 
-    @Provides
-    @Singleton
     fun incomingCallNotificationBuilder(
-        @ApplicationContext context: Context,
+        context: Context,
         intent: Intent,
         channelId: String,
         callerName: String,
@@ -110,10 +97,8 @@ object CallNotificationManager {
             ))
     }
 
-    @Provides
-    @Singleton
     fun outgoingCallNotificationBuilder(
-        @ApplicationContext context: Context,
+        context: Context,
         intent: Intent,
         channelId: String,
         text: String,
@@ -140,10 +125,8 @@ object CallNotificationManager {
                 serviceHangupCallIntent(context, intent)
             ))
     }
-    @Provides
-    @Singleton
     fun ongoingCallNotificationBuilder(
-        @ApplicationContext context: Context,
+        context: Context,
         intent: Intent,
         channelId: String,
         calleeName: String,
@@ -171,10 +154,8 @@ object CallNotificationManager {
             ))
     }
 
-    @Provides
-    @Singleton
     fun terminalCallNotificationBuilder(
-        @ApplicationContext context: Context,
+        context: Context,
         channelId: String,
         calleeName: String,
         calleeAvatar: String,
@@ -196,10 +177,8 @@ object CallNotificationManager {
             .setOngoing(false)
     }
 
-    @Provides
-    @Singleton
     fun missedCallNotificationBuilder(
-        @ApplicationContext context: Context,
+        context: Context,
         channelId: String,
         calleeName: String,
         calleeAvatar: String,
@@ -221,7 +200,7 @@ object CallNotificationManager {
     }
 
     private fun serviceHangupCallIntent(
-        @ApplicationContext context: Context,
+        context: Context,
         intent: Intent,
     ): PendingIntent {
         val hangupIntent = Intent(context, CiCareCallService::class.java).apply {
@@ -236,7 +215,7 @@ object CallNotificationManager {
     }
 
     private fun screenCallIntent(
-        @ApplicationContext context: Context,
+        context: Context,
         intent: Intent,
         callAction: String
     ): PendingIntent {

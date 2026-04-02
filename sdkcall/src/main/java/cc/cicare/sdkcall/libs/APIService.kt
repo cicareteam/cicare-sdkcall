@@ -8,6 +8,7 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 
 data class CallRequest(
@@ -34,6 +35,10 @@ data class CallResponse(
     val server: String
 )
 
+data class EncryptKeyResponse(
+    val key: String
+)
+
 data class Error(
     val code: Int,
     val message: String,
@@ -51,6 +56,9 @@ interface ApiService {
 
     @POST("api/sdk-call/app2phone")
     suspend fun requestCallSip(@Body request: CallSipRequest): Response<CallResponse>
+
+    @GET("api/u/encrypt-key")
+    suspend fun getEncryptKey(): Response<EncryptKeyResponse>
 }
 
 object ApiClient {
@@ -89,6 +97,16 @@ object ApiClient {
 }
 
 object CallRepository {
+    suspend fun getEncryptKey(): String? {
+        return try {
+            val response = ApiClient.api.getEncryptKey()
+            if (response.isSuccessful) response.body()?.key else null
+        } catch (e: Exception) {
+            android.util.Log.e("SDK CALL", "Failed to fetch encrypt key: ${e.message}")
+            null
+        }
+    }
+
     suspend fun requestCall(request: CallRequest): CallResult {
         return try {
             val response = ApiClient.api.requestCall(request)

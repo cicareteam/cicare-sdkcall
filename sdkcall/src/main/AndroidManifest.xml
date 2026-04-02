@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -12,23 +15,8 @@
     <application>
         <activity
             android:name=".notifications.ui.ScreenCallActivity"
-            android:exported="false"
-            android:showOnLockScreen="true"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true" />
-        <activity
-            android:name=".notifications.ui.PermissionRequestActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:exported="false" />
-            
-        <service 
-            android:name=".services.CiCareCallService"
-            android:foregroundServiceType="microphone|phoneCall"
-            android:exported="false" />
-            
-        <service 
-            android:name=".services.IncomingCallService"
-            android:foregroundServiceType="microphone|phoneCall"
-            android:exported="false" />
+            android:exported="false"/>
+
     </application>
+
 </manifest>

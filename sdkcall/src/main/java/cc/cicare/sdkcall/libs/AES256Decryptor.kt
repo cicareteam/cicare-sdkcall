@@ -1,13 +1,12 @@
 package cc.cicare.sdkcall.libs
 
-import android.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 object AES256Decryptor {
 
-    fun decrypt(cipherText: String, encryptionKey: String): String {
+    fun decrypt(cipherText: String, encryptionKey: String?): String {
         try {
             // Pisahkan IV dan encrypted data seperti "ivHex:encryptedHex"
             val parts = cipherText.split(":")
@@ -22,7 +21,7 @@ object AES256Decryptor {
             val encryptedBytes = hexToBytes(encryptedHex)
 
             // Key harus 32 byte untuk AES-256
-            val keyBytes = encryptionKey.toByteArray(Charsets.UTF_8)
+            val keyBytes = encryptionKey!!.toByteArray(Charsets.UTF_8)
             require(keyBytes.size == 32) {"0123456789abcdef0123456789abcdef" }
 
             val secretKey = SecretKeySpec(keyBytes, "AES")
