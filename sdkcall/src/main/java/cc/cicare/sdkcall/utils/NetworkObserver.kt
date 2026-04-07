@@ -30,6 +30,15 @@ class NetworkObserver(
 
         override fun onLost(network: Network) {
             scope.launch {
+                /*
+                for (i in 1..10) {
+                    delay(1000)
+                    if (hasInternetConnection()) {
+                        hasInternet = true
+                        break
+                    }
+                }
+                */
                 delay(1500) // delay 1.5 detik agar sempat pindah jaringan
                 val hasInternet = hasInternetConnection()
                 withContext(Dispatchers.Main) {

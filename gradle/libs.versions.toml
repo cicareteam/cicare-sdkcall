@@ -1,6 +1,6 @@
 [versions]
 agp = "8.8.0"
-cicareSdkcall = "1.2.0-rc.9.10"
+cicareSdkcall = "1.2.1-rc.8"
 kotlin = "1.9.23"
 coilCompose = "2.7.0"
 coreKtx = "1.12.0"

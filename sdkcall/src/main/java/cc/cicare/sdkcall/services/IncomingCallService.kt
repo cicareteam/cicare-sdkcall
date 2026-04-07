@@ -103,14 +103,10 @@ class IncomingCallService : Service(), CallStateListener {
         intent.getStringExtra("caller_name")?.let { callerName = it }
         intent.getStringExtra("caller_avatar")?.let { callerAvatar = it }
 
-        // Immediately start foreground to avoid ForegroundServiceDidNotStartInTimeException.
-        // Must be called within ~5 seconds of startForegroundService(), before any async work.
-        ensureForeground(intent)
-
         when (intent.action) {
             ACTION.INCOMING -> {
-                onIncomingCall(intent)
-                showIncomingScreen(intent) // <-- show incoming call screen and notification without waiting network
+                showIncomingScreen(intent)
+                onIncomingCall(intent) // <-- show incoming call screen and notification without waiting network
             }
             ACTION.REJECT -> {
                 Log.i("SDK CALL", "ACTION.REJECT received")
@@ -178,36 +174,6 @@ class IncomingCallService : Service(), CallStateListener {
         stopSelf()
     }
 
-    /**
-     * Immediately promotes this service to foreground.
-     * Must be called synchronously inside onStartCommand() to satisfy the
-     * 5-second startForeground() deadline imposed by Android.
-     */
-    private fun ensureForeground(intent: Intent) {
-        val name = callerName ?: "unknown"
-        val avatar = callerAvatar ?: ""
-        CallNotificationManager.provideNotificationManagerIncoming(
-            this, "CICARE_SDK_INCOMING",
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                NotificationManager.IMPORTANCE_HIGH else Notification.PRIORITY_HIGH
-        )
-        val notification = CallNotificationManager.incomingCallNotificationBuilder(
-            this, intent, "CICARE_SDK_INCOMING", name, avatar
-        )
-        try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(104, notification.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(104, notification.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            } else {
-                startForeground(104, notification.build())
-            }
-        } catch (e: Exception) {
-            Log.e("SDK CALL", "startForeground failed: ${e.message}")
-            stopSelf()
-        }
-    }
-
     private fun onIncomingCall(intent: Intent) {
 
         val token = intent.getStringExtra("token") ?: return
@@ -220,7 +186,6 @@ class IncomingCallService : Service(), CallStateListener {
 
     private fun showIncomingScreen(intent: Intent?) {
         intent?.let {
-            // Update notification (service is already foreground via ensureForeground)
             val name = it.getStringExtra("caller_name") ?: "unknown"
             val avatar = it.getStringExtra("caller_avatar") ?: ""
             CallNotificationManager.provideNotificationManagerIncoming(
@@ -231,8 +196,11 @@ class IncomingCallService : Service(), CallStateListener {
             val notification = CallNotificationManager.incomingCallNotificationBuilder(
                 this, it, "CICARE_SDK_INCOMING", name, avatar
             )
-            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(104, notification.build())
+            try {
+                startForeground(104, notification.build())
+            } catch (e: Exception) {
+                Log.e("SDK CALL", "startForeground failed: ${e.message}")
+            }
         }
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isForeground) {

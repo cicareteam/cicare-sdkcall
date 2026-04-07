@@ -80,6 +80,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     var callState = MutableStateFlow("connecting")
 
     private var isClosed = false
+    private var isStopping = false
     private var keepNotificationOnStop = false
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -297,6 +298,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             return START_NOT_STICKY
         }
         isClosed = false
+        isStopping = false
         metaData =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val extra =
@@ -328,16 +330,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             ACTION.INCOMING -> {
                 // No-op or handle incoming action specifically if needed
             }
-            //                if (callState.value == "CONNECTED") {
-            //                    // Sudah ada panggilan, langsung missed
-            //                    Log.i("SDK Call", "ongoing call from:
-            // ${intent.getStringExtra("callee_name")}")
-            //
-            //                    showMissedCallNotification(
-            //                        callerName = intent.getStringExtra("caller_name") ?:
-            // "Unknown",
-            //                        callerAvatar = intent.getStringExtra("caller_avatar") ?: ""
-
             ACTION.ONGOING -> onOngoingCall(intent)
             ACTION.ACCEPT -> answerCall(intent)
             ACTION.OUTGOING -> serviceScope.launch { onOutgoingCall(intent) }
@@ -358,8 +350,12 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     fun hangup() {
+        if (isStopping) return
         isClosed = true
-        if (callState.value.toLowerCase(Locale.ROOT) == "end") return
+        if (callState.value.lowercase(Locale.ROOT) == "end") {
+            forceStop()
+            return
+        }
         callState.value = "end"
         try {
             // 1️⃣ Kirim sinyal ke server
@@ -368,31 +364,20 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             // 2️⃣ Update UI / listener call state
             eventListener?.onCallStateChanged(CallState.END)
 
-            // 3️⃣ Hentikan semua audio & timer
-            stopRingback()
-            stopTimer()
-
-            // 4️⃣ Tutup WebRTC & signaling
-            webRTCManager.close()
-            socketManager.disconnect()
-
-            // 5️⃣ Hentikan notifikasi foreground
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                stopForeground(true)
-            }
-
             // 6️⃣ Log dan hentikan service
             Log.i("SDK CALL", "Hangup pressed, service stopping")
             forceStop()
         } catch (e: Exception) {
             Log.e("SDK CALL", "Error while hanging up: ${e.message}", e)
+            forceStop()
         }
     }
 
     fun forceStop() {
+        if (isStopping) return
+        isStopping = true
         isClosed = true
+        
         ringingTimeoutJob?.cancel()
         ringingTimeoutJob = null
         releaseWakeLock()
@@ -402,12 +387,16 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         serviceScope.cancel()
         webRTCManager.close()
         socketManager.disconnect()
+
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (keepNotificationOnStop && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_DETACH)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
+            nm.cancel(104)
         } else {
             stopForeground(true)
+            nm.cancel(104)
         }
         stopSelf()
     }
@@ -436,8 +425,12 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     fun reject() {
+        if (isStopping) return
         isClosed = true
-        if (callState.value.lowercase(Locale.ROOT) == "end") return
+        if (callState.value.lowercase(Locale.ROOT) == "end") {
+            forceStop()
+            return
+        }
         callState.value = "end"
         try {
             // Send REJECT signal instead of REQUEST_HANGUP
@@ -448,22 +441,11 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
 
             eventListener?.onCallStateChanged(CallState.END)
 
-            stopRingback()
-            stopTimer()
-
-            webRTCManager.close()
-            socketManager.disconnect()
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                stopForeground(true)
-            }
-
             Log.i("SDK CALL", "Reject called, service stopping")
             forceStop()
         } catch (e: Exception) {
             Log.e("SDK CALL", "Error while rejecting: ${e.message}", e)
+            forceStop()
         }
     }
     fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
@@ -571,19 +553,13 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         } catch (e: Exception) {
             Log.e("SDK CALL", "Failed to start foreground service in onOutgoingCall: ${e.message}")
         }
-        /*startActivity(Intent(this, ScreenCallActivity::class.java).apply {
-            action = ACTION.OUTGOING
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            putExtras(intent)
-        })*/
     }
 
     fun cancelCall() {
+        if (isStopping) return
         isClosed = true
         socketManager.send("CANCEL", JSONObject().apply {})
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE)
-        else stopForeground(true)
-        stopSelf()
+        forceStop()
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -691,11 +667,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         this.socketManager.setConnectionStateListener(connectionListener)
     }
 
-    /**
-     * Callback when local SDP offer/answer has been created.
-     *
-     * @param sdp The session description created.
-     */
     override fun onLocalSdpCreated(sdp: SessionDescription) {
         socketManager.send(
                 "SDP_OFFER",
@@ -706,11 +677,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         )
     }
 
-    /**
-     * Callback when an ICE candidate is generated.
-     *
-     * @param candidate The ICE candidate to be sent to remote peer.
-     */
     override fun onIceCandidateGenerated(candidate: IceCandidate) {
         socketManager.send(
                 "ICE_CANDIDATE",
@@ -722,11 +688,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         )
     }
 
-    /**
-     * Callback when a remote media stream is received.
-     *
-     * @param stream The received remote media stream.
-     */
     override fun onRemoteStreamReceived(stream: MediaStream) {
         if (stream.audioTracks.isNotEmpty()) {
             val remoteAudioTrack = stream.audioTracks[0]
@@ -734,11 +695,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         }
     }
 
-    /**
-     * Callback when the connection state changes.
-     *
-     * @param state The new connection state.
-     */
     override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
         eventListener?.onConnectionStateChanged(state)
     }
@@ -783,13 +739,13 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 stopRingback()
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 this.eventListener?.onCallStateChanged(callState)
-                stopSelf()
+                forceStop()
             }
             CallState.REFUSED -> {
                 stopRingback()
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
                 this.eventListener?.onCallStateChanged(callState)
-                stopSelf()
+                forceStop()
             }
             CallState.CONNECTED -> {
                 stopRingback()
@@ -800,10 +756,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             CallState.TIMEOUT -> {
                 stopRingback()
                 stopTimer()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                else stopForeground(true)
-                stopSelf()
+                forceStop()
             }
             CallState.END, CallState.MISSED -> {
                 hangup()
@@ -839,8 +792,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             PeerConnection.IceConnectionState.CONNECTED -> {
                 reconnectAttempt = 0
                 connectionListener?.onSignalStateChanged("connected")
-                // Jika sedang dalam proses menyambungkan, percepat ke status CONNECTED
-                // agar UI segera menampilkan timer dan media aktif tanpa menunggu event socket.
                 val currentState = callState.value.lowercase(Locale.ROOT)
                 if (currentState == "connecting" || currentState == "answering") {
                     onCallStateChanged(CallState.CONNECTED)

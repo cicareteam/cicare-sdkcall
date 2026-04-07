@@ -360,6 +360,7 @@ class ScreenCallActivity :
 
         // Untuk incoming: bind IncomingCallService yang sudah running
         if (intent.action == CiCareCallService.ACTION.INCOMING) {
+            viewModel.updateState("incoming")
             Intent(this, IncomingCallService::class.java).also {
                 bindService(it, incomingServiceConnection, BIND_AUTO_CREATE)
             }
@@ -374,7 +375,7 @@ class ScreenCallActivity :
                 onNetworkError(
                     state = metaData["call_failed_no_connection"]?.toString()
                         ?: "No internet connection",
-                    systemError = false
+                    systemError = true
                 )
             }
         }
@@ -400,7 +401,9 @@ class ScreenCallActivity :
                     message = networkErrorText,
                     onDismiss = {
                         showErrorDialog = false
-                        if (isSystemError) finish()
+                        if (isSystemError) {
+                            finish()
+                        }
                     }
                 )
             }
@@ -499,12 +502,14 @@ class ScreenCallActivity :
     override fun onDestroy() {
         // Lepas semua binding agar service tidak leak
         if (bound) {
+            callService?.hangup()
             try { unbindService(callServiceConnection) } catch (e: Exception) {
                 Log.w("SDK CALL", "unbind callService failed: ${e.message}")
             }
             bound = false
         }
         if (inbound) {
+            incomingService?.reject()
             try { unbindService(incomingServiceConnection) } catch (e: Exception) {
                 Log.w("SDK CALL", "unbind incomingService failed: ${e.message}")
             }
@@ -740,7 +745,7 @@ class ScreenCallActivity :
             onNetworkError(
                 state = metaData["call_failed_no_connection"]?.toString()
                     ?: "No internet connection",
-                systemError = false
+                systemError = true
             )
             return
         }
@@ -785,7 +790,7 @@ class ScreenCallActivity :
                 callEventListener?.onError(innerCode, innerMsg)
                 onNetworkError(
                     state = metaData[innerMsg]?.toString() ?: innerMsg,
-                    systemError = false
+                    systemError = true
                 )
             } else {
                 callEventListener?.onError(code, innerMsg)
