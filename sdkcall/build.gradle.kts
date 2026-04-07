@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "cc.cicare.sdkcall"
     version = "1.2.1-rc.8"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 23
