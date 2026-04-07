@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -54,7 +53,7 @@ class IncomingCallService : Service(), CallStateListener {
 
     private var isConnected: Boolean = false
 
-    public var callState: CallState? = null
+    var callState: CallState? = null
     private var hasBeenConnected = false
 
     private val binder = LocalBinder()
@@ -82,7 +81,7 @@ class IncomingCallService : Service(), CallStateListener {
             return START_NOT_STICKY
         }
         metaData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val extra = intent?.getSerializableExtra("meta_data", HashMap::class.java)
+            val extra = intent.getSerializableExtra("meta_data", HashMap::class.java)
                 ?.mapNotNull {
                     val key = it.key as? String
                     val value = it.value as? String
@@ -90,7 +89,7 @@ class IncomingCallService : Service(), CallStateListener {
                 }?.toMap() ?: emptyMap()
             HashMap(metaData + extra)
         } else {
-            val extra = (intent?.getSerializableExtra("meta_data") as? HashMap<*, *>)
+            val extra = (intent.getSerializableExtra("meta_data") as? HashMap<*, *>)
                 ?.mapNotNull {
                     val key = it.key as? String
                     val value = it.value as? String
@@ -98,19 +97,17 @@ class IncomingCallService : Service(), CallStateListener {
                 }?.toMap() ?: emptyMap()
             HashMap(metaData + extra)
         }
-        intent?.let { this.intent = Intent(it) }
+        intent.let { this.intent = Intent(it) }
 
         // Always ensure caller info is captured if present in the current intent
-        intent?.getStringExtra("caller_name")?.let { callerName = it }
-        intent?.getStringExtra("caller_avatar")?.let { callerAvatar = it }
+        intent.getStringExtra("caller_name")?.let { callerName = it }
+        intent.getStringExtra("caller_avatar")?.let { callerAvatar = it }
 
         // Immediately start foreground to avoid ForegroundServiceDidNotStartInTimeException.
         // Must be called within ~5 seconds of startForegroundService(), before any async work.
-        if (intent != null) {
-            ensureForeground(intent)
-        }
+        ensureForeground(intent)
 
-        when (intent?.action) {
+        when (intent.action) {
             ACTION.INCOMING -> {
                 onIncomingCall(intent)
                 showIncomingScreen(intent) // <-- show incoming call screen and notification without waiting network
@@ -174,7 +171,7 @@ class IncomingCallService : Service(), CallStateListener {
         }
 
         // Now post the "Missed Call" notification using ID 104 to replace the previous UI
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(104, notification.build())
 
         Log.i("SDK CALL", "Missed call notification posted, stopping service")
@@ -234,7 +231,7 @@ class IncomingCallService : Service(), CallStateListener {
             val notification = CallNotificationManager.incomingCallNotificationBuilder(
                 this, it, "CICARE_SDK_INCOMING", name, avatar
             )
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(104, notification.build())
         }
         val isForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
@@ -341,9 +338,9 @@ class IncomingCallService : Service(), CallStateListener {
             isConnected = true
             hasBeenConnected = true
         }
-        if ( callState == CallState.RINGING_OK) {
+        // if ( callState == CallState.RINGING_OK) {
             //this.showIncomingScreen(intent)
-        }
+        // }
     }
 
 }

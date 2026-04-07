@@ -7,11 +7,8 @@ import cc.cicare.sdkcall.event.ConnectionStateListener
 import cc.cicare.sdkcall.rtc.WebRTCManager
 import io.socket.client.IO
 import io.socket.client.Socket
-import io.socket.emitter.Emitter
 import kotlinx.coroutines.*
 import org.json.JSONObject
-import org.webrtc.IceCandidate
-import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
 
 /**
@@ -229,6 +226,7 @@ class SocketManager {
                 }
             } catch (e: InterruptedException) {
                 // Thread interrupted, exit safely
+                Log.d("SocketManager", "Ping thread interrupted : " + e.message)
             }
         }
         pingThread?.start()

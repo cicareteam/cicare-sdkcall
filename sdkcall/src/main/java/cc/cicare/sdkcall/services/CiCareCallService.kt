@@ -166,7 +166,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             audioManager.requestAudioFocus(focusRequest)
         } else {
             audioManager.requestAudioFocus(
-                    { focusChange -> },
+                    { _ -> },
                     AudioManager.STREAM_VOICE_CALL,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             )
@@ -244,7 +244,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     private fun acquireWakeLock() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock =
                 powerManager.newWakeLock(
                         PowerManager.PARTIAL_WAKE_LOCK,
@@ -264,7 +264,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     private fun keepWifiOn() {
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
         wifiLock =
                 wifiManager.createWifiLock(
                         WifiManager.WIFI_MODE_FULL_HIGH_PERF,
@@ -300,7 +300,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         metaData =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val extra =
-                            intent?.getSerializableExtra("meta_data", HashMap::class.java)
+                            intent.getSerializableExtra("meta_data", HashMap::class.java)
                                     ?.mapNotNull {
                                         val key = it.key as? String
                                         val value = it.value as? String
@@ -311,7 +311,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                     HashMap(metaData + extra)
                 } else {
                     val extra =
-                            (intent?.getSerializableExtra("meta_data") as? HashMap<*, *>)
+                            (intent.getSerializableExtra("meta_data") as? HashMap<*, *>)
                                     ?.mapNotNull {
                                         val key = it.key as? String
                                         val value = it.value as? String
@@ -428,7 +428,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         webRTCManager.setAudioOutputToSpeaker(isSpeakerOn)
     }
 
-    suspend fun initCall(server: String, token: String) {
+    fun initCall(server: String, token: String) {
         webRTCManager.init()
         webRTCManager.initMic()
         socketManager.connect(server, token)
@@ -667,7 +667,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         }
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && foregroundType != -1) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 startForeground(104, notification.build(), foregroundType)
             } else {
                 startForeground(104, notification.build())
