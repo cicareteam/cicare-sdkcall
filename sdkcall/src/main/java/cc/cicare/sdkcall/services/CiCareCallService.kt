@@ -552,20 +552,24 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                         calleeAvatar
                 )
 
-        if (Build.VERSION.SDK_INT >= 34) { // Android 14+
-            startForeground(
-                    104,
-                    notification.build(),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(
-                    104,
-                    notification.build(),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(104, notification.build())
+        try {
+            if (Build.VERSION.SDK_INT >= 34) { // Android 14+
+                startForeground(
+                        104,
+                        notification.build(),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(
+                        104,
+                        notification.build(),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            } else {
+                startForeground(104, notification.build())
+            }
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "Failed to start foreground service in onOutgoingCall: ${e.message}")
         }
         /*startActivity(Intent(this, ScreenCallActivity::class.java).apply {
             action = ACTION.OUTGOING
@@ -662,10 +666,14 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             else -> -1
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && foregroundType != -1) {
-            startForeground(104, notification.build(), foregroundType)
-        } else {
-            startForeground(104, notification.build())
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && foregroundType != -1) {
+                startForeground(104, notification.build(), foregroundType)
+            } else {
+                startForeground(104, notification.build())
+            }
+        } catch (e: Exception) {
+            Log.e("SDK CALL", "Failed to start foreground service in onOngoingCall: ${e.message}")
         }
         startCallTimer()
     }

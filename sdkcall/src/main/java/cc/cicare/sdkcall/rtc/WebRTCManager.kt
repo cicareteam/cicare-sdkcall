@@ -86,8 +86,12 @@ class WebRTCManager(
         }) ?: throw IllegalStateException("Peerconnection failed to initialize")
     }
 
-    fun reconnectPeer() {
-        if (isClosed) return
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun reconnectPeer() = suspendCancellableCoroutine { cont ->
+        if (isClosed) {
+            if (cont.isActive) cont.resume(Unit) {}
+            return@suspendCancellableCoroutine
+        }
         Log.i("WebRTC", "Reconnecting PeerConnection...")
 
         // safe close current pc (non-blocking) then create fresh
@@ -104,8 +108,10 @@ class WebRTCManager(
                     }
                 }
                 Log.i("WebRTC", "PeerConnection successfully reconnected")
+                if (cont.isActive) cont.resume(Unit) {}
             } catch (e: Exception) {
                 Log.e("WebRTC", "Failed to reconnect PeerConnection: ${e.message}")
+                if (cont.isActive) cont.resumeWithException(e)
             }
         }
     }
@@ -248,7 +254,6 @@ class WebRTCManager(
         }
 
         try {
-            audioManager.isSpeakerphoneOn = enabled // Explicitly toggle for MediaPlayer ringback routing
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (enabled) {
@@ -265,14 +270,19 @@ class WebRTCManager(
                         }
                     } else {
                         Log.w("AudioConfig", "Built-in speaker device not found among communication devices. Falling back.")
-                        Log.d("AudioConfig", "Using deprecated isSpeakerphoneOn for speaker enable as fallback.")
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = true
                     }
                 } else {
                     audioManager.clearCommunicationDevice()
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = false
                     Log.d("AudioConfig", "Communication device cleared (speaker disabled).")
                 }
             } else {
                 audioManager.mode = AudioManager.MODE_IN_CALL
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = enabled
             }
             Log.d("AudioConfig", "Audio output for communication updated. Speaker enabled: $enabled")
 

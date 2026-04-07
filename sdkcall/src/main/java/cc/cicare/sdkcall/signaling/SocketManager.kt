@@ -33,6 +33,7 @@ class SocketManager {
     private var connectStartTime: Long = 0
     private var pingStartTime: Long = 0
     private var latencyAverage: Double = 0.0
+    private var pingThread: Thread? = null
 
     fun setCallStateListener(callStateListener: CallStateListener) {
         this.callStateListener = callStateListener
@@ -169,20 +170,26 @@ class SocketManager {
 
         // Received SDP offer from the remote peer
         socket?.on("SDP_OFFER") { args ->
-            //callEventListener.onCallStateChanged(CallState.CONNECTING)
-            val json = args[0] as JSONObject
-            val sdpString = json.getString("sdp")
-            if (webRTCManager == null) {
-                Log.e("SocketManager", "WebRTCManager is null! Cannot handle SDP_OFFER")
-            } else {
-                // Close existing connection before re-initializing to prevent resource leak
-                try { webRTCManager?.close() } catch (_: Exception) {}
-                webRTCManager?.init()
-                webRTCManager?.initMic()
-            }
+            try {
+                //callEventListener.onCallStateChanged(CallState.CONNECTING)
+                val json = args[0] as JSONObject
+                val sdpString = json.getString("sdp")
+                if (webRTCManager == null) {
+                    Log.e("SocketManager", "WebRTCManager is null! Cannot handle SDP_OFFER")
+                } else {
+                    // Close existing connection before re-initializing to prevent resource leak
+                    try { webRTCManager?.close() } catch (_: Exception) {}
+                    webRTCManager?.init()
+                    webRTCManager?.initMic()
+                }
 
-            val sdp = SessionDescription(SessionDescription.Type.OFFER, sdpString)
-            webRTCManager?.setRemoteDescription(sdp)
+                val sdp = SessionDescription(SessionDescription.Type.OFFER, sdpString)
+                webRTCManager?.setRemoteDescription(sdp)
+            } catch (e: Exception) {
+                Log.e("SocketManager", "Error parsing SDP_OFFER: ${e.message}")
+                callStateListener?.onCallStateChanged(CallState.END)
+                disconnect()
+            }
         }
 
         // Ringing event sent to callee to indicate incoming call
@@ -197,23 +204,34 @@ class SocketManager {
 
         // Received SDP answer from remote peer
         socket?.on("SDP_ANSWER") { args ->
-            //callEventListener.onCallStateChanged(CallState.CONNECTING)
-            val json = args[0] as JSONObject
-            val sdpString = json.getString("sdp")
-            Log.i("SDK CALL SDP_ANSWER", sdpString)
-            val sdp = SessionDescription(SessionDescription.Type.ANSWER, sdpString)
-            webRTCManager?.setRemoteDescription(sdp)
+            try {
+                //callEventListener.onCallStateChanged(CallState.CONNECTING)
+                val json = args[0] as JSONObject
+                val sdpString = json.getString("sdp")
+                Log.i("SDK CALL SDP_ANSWER", sdpString)
+                val sdp = SessionDescription(SessionDescription.Type.ANSWER, sdpString)
+                webRTCManager?.setRemoteDescription(sdp)
+            } catch (e: Exception) {
+                Log.e("SocketManager", "Error parsing SDP_ANSWER: ${e.message}")
+                callStateListener?.onCallStateChanged(CallState.END)
+                disconnect()
+            }
         }
     }
 
     private fun startPingLoop() {
-        val thread = Thread {
-            while (socket?.connected() == true) {
-                sendPing()
-                Thread.sleep(5000)
+        pingThread?.interrupt()
+        pingThread = Thread {
+            try {
+                while (socket?.connected() == true && !Thread.currentThread().isInterrupted) {
+                    sendPing()
+                    Thread.sleep(5000)
+                }
+            } catch (e: InterruptedException) {
+                // Thread interrupted, exit safely
             }
         }
-        thread.start()
+        pingThread?.start()
     }
 
     private fun sendPing() {
@@ -245,6 +263,8 @@ class SocketManager {
      * Disconnects the WebSocket connection.
      */
     fun disconnect() {
+        pingThread?.interrupt()
+        pingThread = null
         socket?.disconnect()
     }
 }

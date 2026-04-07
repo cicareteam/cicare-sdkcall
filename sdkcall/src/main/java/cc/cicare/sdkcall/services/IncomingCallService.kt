@@ -106,7 +106,9 @@ class IncomingCallService : Service(), CallStateListener {
 
         // Immediately start foreground to avoid ForegroundServiceDidNotStartInTimeException.
         // Must be called within ~5 seconds of startForegroundService(), before any async work.
-        //ensureForeground(intent)
+        if (intent != null) {
+            ensureForeground(intent)
+        }
 
         when (intent?.action) {
             ACTION.INCOMING -> {
