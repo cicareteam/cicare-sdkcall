@@ -39,7 +39,7 @@ class NetworkObserver(
                     }
                 }
                 */
-                delay(1500) // delay 1.5 detik agar sempat pindah jaringan
+                delay(5000) // delay 1.5 detik agar sempat pindah jaringan
                 val hasInternet = hasInternetConnection()
                 withContext(Dispatchers.Main) {
                     listener(hasInternet) // false jika benar-benar offline

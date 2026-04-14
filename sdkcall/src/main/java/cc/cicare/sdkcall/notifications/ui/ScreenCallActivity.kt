@@ -502,6 +502,7 @@ class ScreenCallActivity :
     override fun onDestroy() {
         // Lepas semua binding agar service tidak leak
         if (bound) {
+            Log.i("SDK CALL", "unbind callService ")
             callService?.hangup()
             try { unbindService(callServiceConnection) } catch (e: Exception) {
                 Log.w("SDK CALL", "unbind callService failed: ${e.message}")
@@ -678,12 +679,8 @@ class ScreenCallActivity :
                 }.also {
                     bindService(it, callServiceConnection, BIND_AUTO_CREATE)
                 }
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(svcIntent)
-                } else {
-                    startService(svcIntent)
-                }
+                Log.i("SDKCALL", "Start Service")
+                startService(svcIntent)
             }
 
             CiCareCallService.ACTION.REJECT -> {
@@ -726,11 +723,7 @@ class ScreenCallActivity :
             }.also {
                 bindService(it, callServiceConnection, BIND_AUTO_CREATE)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(svcIntent)
-            } else {
-                startService(svcIntent)
-            }
+            startService(svcIntent)
             serviceStarted = true
         }
     }

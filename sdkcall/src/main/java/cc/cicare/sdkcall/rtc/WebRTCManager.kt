@@ -49,6 +49,21 @@ class WebRTCManager(
         createPeerConnection()
     }
 
+    private fun reinit() {
+        setAudioOutputToSpeaker(false)
+        eglBase = EglBase.create()
+        eglReleased = false
+        isClosed = false
+
+        val options = PeerConnectionFactory.InitializationOptions.builder(context)
+            .createInitializationOptions()
+        PeerConnectionFactory.initialize(options)
+
+        peerConnectionFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+
+        createPeerConnection()
+    }
+
     private fun createPeerConnection() {
         val factory = peerConnectionFactory ?: throw IllegalStateException("Factory not initialized")
 

@@ -770,6 +770,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         if (isClosed) return
         socketManager.send("RECONNECT", JSONObject().apply {})
         serviceScope.launch(Dispatchers.Main) {
+            webRTCManager.init()
             webRTCManager.reconnectPeer()
             val sdp = webRTCManager.createOffer()
             socketManager.send(
@@ -798,19 +799,21 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 }
             }
             PeerConnection.IceConnectionState.DISCONNECTED -> {
+                if (isClosed) return
                 reconnectAttempt++
-                if (reconnectAttempt > 3) {
-                    webRTCManager.close()
-                    return
-                }
-                connectionListener?.onSignalStateChanged("reconnecting")
+                webRTCManager.close()
+                connectionListener?.onSignalStateChanged("lost")
                 renegotiateRtC("OFFER")
             }
             PeerConnection.IceConnectionState.FAILED -> {
-                webRTCManager.close()
+                if (isClosed) return
+                connectionListener?.onSignalStateChanged("reconnecting")
+                //webRTCManager.close()
             }
             PeerConnection.IceConnectionState.CLOSED -> {
-                connectionListener?.onSignalStateChanged("lost")
+                if (isClosed) return
+                connectionListener?.onSignalStateChanged("reconnecting")
+                //webRTCManager.close()
             }
             else -> {
                 // Log.d("SDK CALL", "ICE State: $state")

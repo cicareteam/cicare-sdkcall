@@ -397,6 +397,7 @@ object CiCareSdkCall {
     ) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.i("SDKCALL", "Start Foreground Incoming service")
                 ctx.startForegroundService(serviceIntent)
             } else {
                 ctx.startService(serviceIntent)

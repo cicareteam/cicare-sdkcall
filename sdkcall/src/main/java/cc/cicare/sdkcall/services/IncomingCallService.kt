@@ -56,6 +56,8 @@ class IncomingCallService : Service(), CallStateListener {
     var callState: CallState? = null
     private var hasBeenConnected = false
 
+    private var rejectPending = false
+
     private val binder = LocalBinder()
 
     private lateinit var socketManager: SocketManager
@@ -172,6 +174,7 @@ class IncomingCallService : Service(), CallStateListener {
 
         Log.i("SDK CALL", "Missed call notification posted, stopping service")
         stopSelf()
+        Log.i("SDK CALL", "Missed call notification posted, after stop service")
     }
 
     private fun onIncomingCall(intent: Intent) {
@@ -228,6 +231,7 @@ class IncomingCallService : Service(), CallStateListener {
 
     fun reject() {
         Log.i("SDK CALL", "REJECT called in IncomingCallService")
+        rejectPending = !socketManager.isConnected()
         // Always send REJECT to server first to stop caller ringing. 
         // Include caller_id so the server can identify which call to terminate.
         socketManager.send("REJECT", JSONObject().apply {
@@ -295,7 +299,7 @@ class IncomingCallService : Service(), CallStateListener {
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     override fun onCallStateChanged(callState: CallState) {
-        Log.i("SDK Call", "onCallStateChanged: $callState")
+        // Log.i("SDK Call", "onCallStateChanged Incoming: $callState")
         this.callState = callState
         if (callState == CallState.END || callState == CallState.MISSED || callState == CallState.TIMEOUT) {
             if (!isConnected && !hasBeenConnected)
@@ -305,6 +309,9 @@ class IncomingCallService : Service(), CallStateListener {
         } else if (callState == CallState.CONNECTED){
             isConnected = true
             hasBeenConnected = true
+            forceStop()
+        } else if (callState == CallState.CONNECTING){
+            forceStop()
         }
         // if ( callState == CallState.RINGING_OK) {
             //this.showIncomingScreen(intent)

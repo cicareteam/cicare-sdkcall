@@ -31,6 +31,7 @@ class SocketManager {
     private var pingStartTime: Long = 0
     private var latencyAverage: Double = 0.0
     private var pingThread: Thread? = null
+    private var connected: Boolean = false
 
     fun setCallStateListener(callStateListener: CallStateListener) {
         this.callStateListener = callStateListener
@@ -72,6 +73,7 @@ class SocketManager {
             if (elapsed > 1500) {
                 connectionStateListener?.onSignalStateChanged("weak")
             }
+            connected = true
             /*if (disconnectCount > 0) {
                 callStateListener?.onCallStateChanged(CallState.RECONNECTING)
             }*/
@@ -81,6 +83,7 @@ class SocketManager {
 
         socket?.on(Socket.EVENT_DISCONNECT) {
             disconnectCount++
+            connected = false
             if (disconnectCount > 1) {
                 callStateListener?.onCallStateChanged(CallState.END)
                 this.disconnect()
@@ -89,6 +92,7 @@ class SocketManager {
 
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             val error = args.getOrNull(0)
+            connected = false
             Log.e("SocketManager", "Socket connection error: $error")
             if (error.toString() == "io.socket.engineio.client.EngineIOException: websocket error") {
                 socket?.connect()
@@ -245,6 +249,10 @@ class SocketManager {
         } else {
             connectionStateListener?.onSignalStateChanged("")
         }
+    }
+
+    fun isConnected(): Boolean {
+        return connected
     }
 
     /**
