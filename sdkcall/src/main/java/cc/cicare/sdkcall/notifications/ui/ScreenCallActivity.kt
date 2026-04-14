@@ -490,7 +490,7 @@ class ScreenCallActivity :
             CiCareCallService.ACTION.ACCEPT -> {
                 if (isMicPermissionGranted) {
                     // Service sudah bound, langsung jawab
-                    callService?.answerCall(intent, true)
+                    proceedAnswerCall()
                 } else {
                     showMicPermissionDialog = true
                 }
