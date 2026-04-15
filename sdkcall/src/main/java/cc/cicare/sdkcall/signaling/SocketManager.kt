@@ -30,8 +30,11 @@ class SocketManager {
     private var connectStartTime: Long = 0
     private var pingStartTime: Long = 0
     private var latencyAverage: Double = 0.0
-    private var pingThread: Thread? = null
-    private var connected: Boolean = false
+    private var isIntentionalDisconnect: Boolean = false
+
+    private val socketScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private var pingJob: Job? = null
 
     fun setCallStateListener(callStateListener: CallStateListener) {
         this.callStateListener = callStateListener
@@ -57,8 +60,8 @@ class SocketManager {
             query = "token=$token"
             reconnection = true
             reconnectionAttempts = 3
-            reconnectionDelay = 1000
-            reconnectionDelayMax = 3000
+            reconnectionDelay = 3000
+            reconnectionDelayMax = 5000
             timeout = 5000
             forceNew = true
             transports = arrayOf("websocket")
@@ -72,34 +75,63 @@ class SocketManager {
             val elapsed = System.currentTimeMillis() - connectStartTime
             if (elapsed > 1500) {
                 connectionStateListener?.onSignalStateChanged("weak")
+            } else {
+                connectionStateListener?.onSignalStateChanged("")
             }
-            connected = true
-            /*if (disconnectCount > 0) {
-                callStateListener?.onCallStateChanged(CallState.RECONNECTING)
-            }*/
+
+            // FIX #2: cek disconnectCount DULU, baru reset
+            if (disconnectCount > 0) {
+                // Ini adalah reconnect setelah drop
+                connectionStateListener?.onSignalStateChanged("reconnecting")
+                socketScope.launch(Dispatchers.Main) {
+                    performReconnect()
+                }
+            }
+            // Reset SETELAH cek
             disconnectCount = 0
+
             startPingLoop()
         }
 
         socket?.on(Socket.EVENT_DISCONNECT) {
-            disconnectCount++
-            connected = false
-            if (disconnectCount > 1) {
+            // FIX #1: skip logic jika memang sengaja disconnect
+            if (isIntentionalDisconnect) {
                 callStateListener?.onCallStateChanged(CallState.END)
-                this.disconnect()
+                return@on
             }
+
+            disconnectCount++
+            Log.e("SocketManager", "Connection dropped, count=$disconnectCount")
+            connectionStateListener?.onSignalStateChanged("disconnect")
+
+            if (disconnectCount > 3) {
+                connectionStateListener?.onSignalStateChanged("lost")
+                callStateListener?.onCallStateChanged(CallState.END)
+                disconnect()
+            }
+            // Jika count <= 3, Socket.IO akan otomatis retry (reconnectionAttempts=3)
         }
 
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
-            val error = args.getOrNull(0)
-            connected = false
-            Log.e("SocketManager", "Socket connection error: $error")
-            if (error.toString() == "io.socket.engineio.client.EngineIOException: websocket error") {
-                socket?.connect()
-            } else {
-                callStateListener?.onCallStateChanged(CallState.END)
+            if (isIntentionalDisconnect) return@on
 
-                this.disconnect()
+            val error = args.getOrNull(0)
+            Log.e("SocketManager", "Connect error: $error")
+
+            when {
+                error.toString().contains("websocket error") -> socket?.connect()
+                error.toString() == "timeout" -> {
+                    disconnectCount++
+                    if (disconnectCount > 3) {
+                        connectionStateListener?.onSignalStateChanged("lost")
+                        callStateListener?.onCallStateChanged(CallState.END)
+                        disconnect()
+                    }
+                }
+                else -> {
+                    callStateListener?.onCallStateChanged(CallState.END)
+                    disconnect()
+                }
             }
         }
 
@@ -125,7 +157,6 @@ class SocketManager {
             CoroutineScope(Dispatchers.Main).launch {
                 try {
                     val offer = webRTCManager?.createOffer()
-
                     offer?.let {
                         send("SDP_OFFER", JSONObject().apply {
                             put("is_caller", true)
@@ -159,14 +190,14 @@ class SocketManager {
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
             callStateListener?.onCallStateChanged(CallState.END)
-            webRTCManager?.close()
-            socket?.disconnect()
+            //webRTCManager?.close()
+            disconnect()
         }
 
         socket?.on("NO_ANSWER") { _ ->
             callStateListener?.onCallStateChanged(CallState.TIMEOUT)
-            webRTCManager?.close()
-            socket?.disconnect()
+            //webRTCManager?.close()
+            disconnect()
         }
 
         // Received SDP offer from the remote peer
@@ -220,20 +251,35 @@ class SocketManager {
         }
     }
 
+    private suspend fun performReconnect() {
+        try {
+            webRTCManager?.close()
+        } catch (_: Exception) {}
+
+        webRTCManager?.init()
+        webRTCManager?.reconnectPeer()
+
+        // Tidak perlu launch lagi — sudah di dalam coroutine (Dispatchers.Main)
+        val offer = webRTCManager?.createOffer()
+        offer?.let {
+            send("SDP_OFFER", JSONObject().apply {
+                put("is_caller", true)
+                put("sdp", JSONObject().apply {
+                    put("type", "offer")
+                    put("sdp", it.description)
+                })
+            })
+        }
+    }
+
     private fun startPingLoop() {
-        pingThread?.interrupt()
-        pingThread = Thread {
-            try {
-                while (socket?.connected() == true && !Thread.currentThread().isInterrupted) {
-                    sendPing()
-                    Thread.sleep(5000)
-                }
-            } catch (e: InterruptedException) {
-                // Thread interrupted, exit safely
-                Log.d("SocketManager", "Ping thread interrupted : " + e.message)
+        pingJob?.cancel()
+        pingJob = socketScope.launch {
+            while (isActive && socket?.connected() == true) {
+                sendPing()
+                delay(5000)
             }
         }
-        pingThread?.start()
     }
 
     private fun sendPing() {
@@ -244,16 +290,10 @@ class SocketManager {
     private fun handlePong() {
         val latency = System.currentTimeMillis() - pingStartTime
         latencyAverage = (latencyAverage * 0.8) + (latency * 0.2)
-        if (latency > 300) {
-            connectionStateListener?.onSignalStateChanged("weak")
-        } else {
-            connectionStateListener?.onSignalStateChanged("")
-        }
+        connectionStateListener?.onSignalStateChanged(if (latency > 300) "weak" else "")
     }
 
-    fun isConnected(): Boolean {
-        return connected
-    }
+    fun isConnected(): Boolean = socket?.connected() == true
 
     /**
      * Sends a signaling event through the WebSocket connection.
@@ -269,8 +309,15 @@ class SocketManager {
      * Disconnects the WebSocket connection.
      */
     fun disconnect() {
-        pingThread?.interrupt()
-        pingThread = null
+        isIntentionalDisconnect = true
+        pingJob?.cancel()
+        pingJob = null
         socket?.disconnect()
+    }
+
+    // Panggil ini saat Activity/Fragment destroy untuk cleanup total
+    fun destroy() {
+        disconnect()
+        socketScope.cancel()
     }
 }

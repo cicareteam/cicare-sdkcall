@@ -386,7 +386,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         stopTimer()
         serviceScope.cancel()
         webRTCManager.close()
-        socketManager.disconnect()
+        socketManager.destroy()
 
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (keepNotificationOnStop && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -449,6 +449,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         }
     }
     fun answerCall(intent: Intent, fromScreen: Boolean? = false) {
+        onOngoingCall(intent)
         val isForeground =
                 ProcessLifecycleOwner.get()
                         .lifecycle
@@ -509,7 +510,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 PackageManager.PERMISSION_GRANTED
     }
 
-    @SuppressLint("MissingPermission")
+    //@SuppressLint("MissingPermission")
     private fun onOutgoingCall(intent: Intent) {
         outgoingIntent = intent
         this.intent = intent
@@ -535,21 +536,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 )
 
         try {
-            if (Build.VERSION.SDK_INT >= 34) { // Android 14+
-                startForeground(
-                        104,
-                        notification.build(),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(
-                        104,
-                        notification.build(),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                )
-            } else {
-                startForeground(104, notification.build())
-            }
+            startForeground(104, notification.build())
         } catch (e: Exception) {
             Log.e("SDK CALL", "Failed to start foreground service in onOutgoingCall: ${e.message}")
         }
@@ -582,17 +569,17 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         val calleeAvatar = safeOutgoingIntent.getStringExtra("callee_avatar") ?: ""
         val statusText = metaData["call_$callState"] ?: callState
         val isTerminalState = callState in listOf("busy", "refused", "failed", "timeout")
-        val notification = if (isTerminalState) {
-            keepNotificationOnStop = true
+        if (isTerminalState) {
+            /*keepNotificationOnStop = true
             CallNotificationManager.terminalCallNotificationBuilder(
                 this,
                 "CALL_OUTGOING_CICARE",
                 calleeName,
                 calleeAvatar,
                 statusText
-            )
+            )*/
         } else {
-            CallNotificationManager.outgoingCallNotificationBuilder(
+            val notification = CallNotificationManager.outgoingCallNotificationBuilder(
                 this,
                 safeOutgoingIntent,
                 "CALL_OUTGOING_CICARE",
@@ -600,9 +587,9 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 calleeName,
                 calleeAvatar
             )
+            notificationManager.notify(104, notification.build())
         }
 
-        notificationManager.notify(104, notification.build())
     }
 
     private fun onOngoingCall(intent: Intent) {
@@ -628,8 +615,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                         callerName ?: this.callName ?: "unknown",
                         callerAvatar ?: ""
                 )
-        eventListener?.onCallStateChanged(CallState.CONNECTED)
-        val foregroundType = when {
+        /*val foregroundType = when {
             Build.VERSION.SDK_INT >= 34 -> {
                 val hasMic = hasMicrophonePermission()
                 if (hasMic)
@@ -640,11 +626,12 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             else -> -1
-        }
+        }*/
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(104, notification.build(), foregroundType)
+                startForeground(104, notification.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
             } else {
                 startForeground(104, notification.build())
             }
@@ -697,6 +684,11 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
 
     override fun onConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
         eventListener?.onConnectionStateChanged(state)
+        if (state == PeerConnection.PeerConnectionState.FAILED) {
+            CoroutineScope(Dispatchers.Main).launch { ->
+                webRTCManager.reconnectPeer()
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -733,7 +725,9 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                             cancelCall()
                         }
             }
-            CallState.RECONNECTING -> {}
+            CallState.RECONNECTING -> {
+                renegotiateRtC("OFFER")
+            }
             CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
             CallState.BUSY -> {
                 stopRingback()
@@ -749,9 +743,10 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             }
             CallState.CONNECTED -> {
                 stopRingback()
-                ringingTimeoutJob?.cancel() // Panggilan terhubung, batalkan timer timeout
+                ringingTimeoutJob?.cancel()
                 ringingTimeoutJob = null
                 intent?.let { onOngoingCall(it) }
+                this.eventListener?.onCallStateChanged(CallState.CONNECTED)
             }
             CallState.TIMEOUT -> {
                 stopRingback()
@@ -803,7 +798,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 reconnectAttempt++
                 webRTCManager.close()
                 connectionListener?.onSignalStateChanged("lost")
-                renegotiateRtC("OFFER")
+                //renegotiateRtC("OFFER")
             }
             PeerConnection.IceConnectionState.FAILED -> {
                 if (isClosed) return

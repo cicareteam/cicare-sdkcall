@@ -61,7 +61,6 @@ class WebRTCManager(
 
         peerConnectionFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
 
-        createPeerConnection()
     }
 
     private fun createPeerConnection() {
@@ -96,7 +95,16 @@ class WebRTCManager(
             override fun onDataChannel(p0: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
-                newState?.let { callback.onConnectionStateChanged(it) }
+                newState?.let {
+                    callback.onConnectionStateChanged(it)
+                    /*if (it == PeerConnection.PeerConnectionState.CLOSED ||
+                        it == PeerConnection.PeerConnectionState.FAILED ||
+                        it == PeerConnection.PeerConnectionState.DISCONNECTED
+                    ) {
+                        Log.i("WebRTC", "Connection closed by WebRTC, triggering cleanup")
+                        close()
+                    }*/
+                }
             }
         }) ?: throw IllegalStateException("Peerconnection failed to initialize")
     }
@@ -112,6 +120,7 @@ class WebRTCManager(
         // safe close current pc (non-blocking) then create fresh
         safeClosePeerConnectionAndKeepFactory {
             try {
+                reinit()
                 createPeerConnection()
                 // Re-attach audio track jika sudah dibuat
                 audioTrack?.let { track ->
@@ -149,6 +158,7 @@ class WebRTCManager(
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun createOffer(): SessionDescription = suspendCancellableCoroutine { cont ->
         val constraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
         }

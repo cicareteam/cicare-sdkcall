@@ -50,8 +50,8 @@
             </intent-filter>
         </activity>
         <service android:name="cc.cicare.sdkcall.services.IncomingCallService"
-            android:foregroundServiceType="phoneCall"
-            android:exported="false"/>
+            android:exported="false"
+            android:foregroundServiceType="phoneCall"/>
         <service android:name="cc.cicare.sdkcall.services.CiCareCallService"
             android:foregroundServiceType="microphone|phoneCall"
             android:exported="false"/>

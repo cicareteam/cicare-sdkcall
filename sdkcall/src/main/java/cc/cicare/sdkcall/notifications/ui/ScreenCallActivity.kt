@@ -489,6 +489,7 @@ class ScreenCallActivity :
         when (intent.action) {
             CiCareCallService.ACTION.ACCEPT -> {
                 if (isMicPermissionGranted) {
+                    networkObserver.stop()
                     // Service sudah bound, langsung jawab
                     proceedAnswerCall()
                 } else {
@@ -547,6 +548,7 @@ class ScreenCallActivity :
 
             CallState.CONNECTED -> {
                 hasBeenConnected = true
+                networkObserver.stop()
             }
 
             CallState.TIMEOUT, CallState.MISSED -> {
@@ -668,7 +670,8 @@ class ScreenCallActivity :
             CiCareCallService.ACTION.OUTGOING,
             CiCareCallService.ACTION.ACCEPT -> {
                 serviceStarted = true
-                isOutgoingCall = true
+                networkObserver.stop()
+                isOutgoingCall = intent?.action == CiCareCallService.ACTION.OUTGOING
 
                 // Hentikan incoming service jika masih ada (skenario: accept dari notif)
                 incomingService?.forceStop()
@@ -679,13 +682,12 @@ class ScreenCallActivity :
                 }.also {
                     bindService(it, callServiceConnection, BIND_AUTO_CREATE)
                 }
-                Log.i("SDKCALL", "Start Service")
-                startService(svcIntent)
-            }
 
-            CiCareCallService.ACTION.REJECT -> {
-                serviceStarted = true
-                hangup()
+                intent?.action?.let { Log.i("SDK Call Logger", it) }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    startForegroundService(svcIntent)
+                else
+                    startService(svcIntent)
             }
         }
     }
@@ -723,7 +725,10 @@ class ScreenCallActivity :
             }.also {
                 bindService(it, callServiceConnection, BIND_AUTO_CREATE)
             }
-            startService(svcIntent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                startForegroundService(svcIntent)
+            else
+                startService(svcIntent)
             serviceStarted = true
         }
     }
@@ -817,7 +822,7 @@ class ScreenCallActivity :
             }
             startService(svcIntent)
         }
-        finish()
+        finishAndRemoveTask()
     }
 
     /**
@@ -846,7 +851,7 @@ class ScreenCallActivity :
             }
             startService(svcIntent)
         }
-        finish()
+        finishAndRemoveTask()
     }
 
     /**
@@ -861,12 +866,16 @@ class ScreenCallActivity :
             bound = false
             callService?.forceStop()
             callService = null
+            serviceStarted = false
         }
     }
 
     /** Tutup Activity setelah 2 detik (memberi waktu UI menampilkan status akhir). */
     private fun finishWithDelay() {
-        window.decorView.postDelayed({ if (!isFinishing) finish() }, 2000)
+        window.decorView.postDelayed({
+            if (!isFinishing)
+                finishAndRemoveTask()
+        }, 2000)
     }
 
     private fun checkInternetConnection(): Boolean {
