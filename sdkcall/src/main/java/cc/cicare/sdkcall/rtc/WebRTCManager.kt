@@ -28,10 +28,17 @@ class WebRTCManager(
     private var audioTrack: AudioTrack? = null
     private var audioSource: AudioSource? = null
 
+    private var isOnSpeaker: Boolean = false
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val iceServers = listOf(
-        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("turn:turn.socivio.online:3478")
+            .setUsername("annas")
+            .setPassword("rahasia123")
+            .createIceServer()
+
     )
 
     fun init() {
@@ -49,8 +56,8 @@ class WebRTCManager(
         createPeerConnection()
     }
 
-    private fun reinit() {
-        setAudioOutputToSpeaker(false)
+    fun reinit() {
+        setAudioOutputToSpeaker(isOnSpeaker)
         eglBase = EglBase.create()
         eglReleased = false
         isClosed = false
@@ -121,6 +128,7 @@ class WebRTCManager(
         safeClosePeerConnectionAndKeepFactory {
             try {
                 reinit()
+                initMic()
                 createPeerConnection()
                 // Re-attach audio track jika sudah dibuat
                 audioTrack?.let { track ->
@@ -271,6 +279,7 @@ class WebRTCManager(
     }
 
     fun setAudioOutputToSpeaker(enabled: Boolean) {
+        isOnSpeaker = enabled
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
         if (audioManager == null) {

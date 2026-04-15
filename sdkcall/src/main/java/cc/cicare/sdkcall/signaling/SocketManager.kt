@@ -100,9 +100,9 @@ class SocketManager {
                 return@on
             }
 
-            disconnectCount++
+            //disconnectCount++
             Log.e("SocketManager", "Connection dropped, count=$disconnectCount")
-            connectionStateListener?.onSignalStateChanged("disconnect")
+            connectionStateListener?.onSignalStateChanged("reconnecting")
 
             if (disconnectCount > 3) {
                 connectionStateListener?.onSignalStateChanged("lost")
@@ -119,7 +119,7 @@ class SocketManager {
             Log.e("SocketManager", "Connect error: $error")
 
             when {
-                error.toString().contains("websocket error") -> socket?.connect()
+                error.toString().contains("websocket error") ||
                 error.toString() == "timeout" -> {
                     disconnectCount++
                     if (disconnectCount > 3) {
@@ -253,11 +253,11 @@ class SocketManager {
 
     private suspend fun performReconnect() {
         try {
-            webRTCManager?.close()
-        } catch (_: Exception) {}
-
-        webRTCManager?.init()
-        webRTCManager?.reconnectPeer()
+            webRTCManager?.reconnectPeer()
+        } catch (e: Exception) {
+            Log.e("SocketManager", "Error reconnecting: ${e.message}")
+            disconnect()
+        }
 
         // Tidak perlu launch lagi — sudah di dalam coroutine (Dispatchers.Main)
         val offer = webRTCManager?.createOffer()

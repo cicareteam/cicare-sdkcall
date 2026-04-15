@@ -350,12 +350,15 @@ class ScreenCallActivity :
         metaData = mergeMetaData(intent)
 
         // Cek permission mic sebelum apapun
-        isMicPermissionGranted = checkMicPermissionGranted()
-        if (!isMicPermissionGranted) {
-            val everRequested = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_MIC_REQUESTED, false)
-            isMicPermanentlyDenied = everRequested && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
-            showMicPermissionDialog = true
+        if (intent.action == CiCareCallService.ACTION.ACCEPT || intent.action == CiCareCallService.ACTION.OUTGOING) {
+            isMicPermissionGranted = checkMicPermissionGranted()
+            if (!isMicPermissionGranted) {
+                val everRequested = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_MIC_REQUESTED, false)
+                isMicPermanentlyDenied =
+                    everRequested && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+                showMicPermissionDialog = true
+            }
         }
 
         // Untuk incoming: bind IncomingCallService yang sudah running
@@ -438,6 +441,7 @@ class ScreenCallActivity :
                             proceedAnswerCall()
                         } else {
                             // Tampilkan dialog permission — user belum grant saat tap answer
+                            intent.action = CiCareCallService.ACTION.ACCEPT
                             showMicPermissionDialog = true
                         }
                     },
@@ -467,6 +471,8 @@ class ScreenCallActivity :
     override fun onStart() {
         super.onStart()
         networkObserver.start()
+
+        intent.action?.let { Log.i("SDK CALL", "start action $it") }
 
         // Guard: hanya start service sekali per sesi Activity
         if (!serviceStarted && isMicPermissionGranted) {

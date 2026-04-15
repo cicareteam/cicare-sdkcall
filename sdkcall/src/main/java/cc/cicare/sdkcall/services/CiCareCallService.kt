@@ -728,7 +728,12 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             CallState.RECONNECTING -> {
                 renegotiateRtC("OFFER")
             }
-            CallState.CONNECTING -> outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            CallState.CONNECTING -> {
+                stopRingback()
+                ringingTimeoutJob?.cancel()
+                ringingTimeoutJob = null
+                outgoingCallStateUpdate(this@CiCareCallService.callState.value)
+            }
             CallState.BUSY -> {
                 stopRingback()
                 outgoingCallStateUpdate(this@CiCareCallService.callState.value)
@@ -742,9 +747,6 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 forceStop()
             }
             CallState.CONNECTED -> {
-                stopRingback()
-                ringingTimeoutJob?.cancel()
-                ringingTimeoutJob = null
                 intent?.let { onOngoingCall(it) }
                 this.eventListener?.onCallStateChanged(CallState.CONNECTED)
             }
@@ -809,6 +811,9 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 if (isClosed) return
                 connectionListener?.onSignalStateChanged("reconnecting")
                 //webRTCManager.close()
+            }
+            PeerConnection.IceConnectionState.CHECKING -> {
+                //renegotiateRtC("OFFER")
             }
             else -> {
                 // Log.d("SDK CALL", "ICE State: $state")
