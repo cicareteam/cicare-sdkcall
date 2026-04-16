@@ -86,6 +86,8 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    private var newSession: Boolean = true
+
     private var metaData: Map<String, String> =
             hashMapOf(
                     "call_busy" to "The customer is busy and cannot be reached",
@@ -297,6 +299,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
             stopSelf()
             return START_NOT_STICKY
         }
+        newSession = true
         isClosed = false
         isStopping = false
         metaData =
@@ -638,7 +641,9 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         } catch (e: Exception) {
             Log.e("SDK CALL", "Failed to start foreground service in onOngoingCall: ${e.message}")
         }
-        startCallTimer()
+        if (newSession)
+            startCallTimer()
+        newSession = false
     }
 
     fun setCallEventListener(eventListener: CallStateListener) {

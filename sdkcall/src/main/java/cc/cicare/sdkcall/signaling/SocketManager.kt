@@ -36,6 +36,9 @@ class SocketManager {
 
     private var pingJob: Job? = null
 
+    private var reconnecting: Boolean = false
+    private var sendReconnect: Boolean = false
+
     fun setCallStateListener(callStateListener: CallStateListener) {
         this.callStateListener = callStateListener
     }
@@ -58,8 +61,8 @@ class SocketManager {
         //Log.i("SDK Call", "Connecting to $wssUrl")
         val opts = IO.Options().apply {
             query = "token=$token"
-            reconnection = true
-            reconnectionAttempts = 3
+            reconnection = false
+            reconnectionAttempts = 5
             reconnectionDelay = 3000
             reconnectionDelayMax = 5000
             timeout = 5000
@@ -72,39 +75,36 @@ class SocketManager {
         socket?.connect()
 
         socket?.on(Socket.EVENT_CONNECT) {
+            reconnecting = false
             val elapsed = System.currentTimeMillis() - connectStartTime
             if (elapsed > 1500) {
                 connectionStateListener?.onSignalStateChanged("weak")
             } else {
                 connectionStateListener?.onSignalStateChanged("")
             }
-
-            // FIX #2: cek disconnectCount DULU, baru reset
             if (disconnectCount > 0) {
-                // Ini adalah reconnect setelah drop
-                connectionStateListener?.onSignalStateChanged("reconnecting")
-                socketScope.launch(Dispatchers.Main) {
-                    performReconnect()
+                if (!sendReconnect) {
+                    sendReconnect = true
+                    socket?.emit("RECONNECT")
+                    Log.i("SDK CALL", "SEND RECONNECTING")
+                    connectionStateListener?.onSignalStateChanged("reconnecting")
                 }
             }
-            // Reset SETELAH cek
             disconnectCount = 0
-
             startPingLoop()
         }
 
         socket?.on(Socket.EVENT_DISCONNECT) {
-            // FIX #1: skip logic jika memang sengaja disconnect
             if (isIntentionalDisconnect) {
                 callStateListener?.onCallStateChanged(CallState.END)
+                sendReconnect = false
                 return@on
             }
 
-            //disconnectCount++
             Log.e("SocketManager", "Connection dropped, count=$disconnectCount")
             connectionStateListener?.onSignalStateChanged("reconnecting")
 
-            if (disconnectCount > 3) {
+            if (disconnectCount > 5) {
                 connectionStateListener?.onSignalStateChanged("lost")
                 callStateListener?.onCallStateChanged(CallState.END)
                 disconnect()
@@ -115,22 +115,34 @@ class SocketManager {
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             if (isIntentionalDisconnect) return@on
 
-            val error = args.getOrNull(0)
+            val error = args.getOrNull(0)?.toString() ?: "unknown"
             Log.e("SocketManager", "Connect error: $error")
 
-            when {
-                error.toString().contains("websocket error") ||
-                error.toString() == "timeout" -> {
-                    disconnectCount++
-                    if (disconnectCount > 3) {
-                        connectionStateListener?.onSignalStateChanged("lost")
-                        callStateListener?.onCallStateChanged(CallState.END)
-                        disconnect()
-                    }
-                }
-                else -> {
-                    callStateListener?.onCallStateChanged(CallState.END)
-                    disconnect()
+            // prevent spam
+            if (reconnecting) return@on
+
+            disconnectCount++
+
+            if (disconnectCount > 5) {
+                connectionStateListener?.onSignalStateChanged("lost")
+                callStateListener?.onCallStateChanged(CallState.END)
+                disconnect()
+                return@on
+            }
+
+            reconnecting = true
+
+            // gunakan coroutine untuk delay
+            CoroutineScope(Dispatchers.IO).launch {
+                Log.d("SocketManager", "Retrying in 3s...")
+
+                kotlinx.coroutines.delay(3000)
+
+                reconnecting = false
+
+                // ❗ jangan pakai connect kalau auto-reconnect aktif
+                if (socket?.connected() != true) {
+                    socket?.connect()
                 }
             }
         }
@@ -232,6 +244,13 @@ class SocketManager {
         // Ringing event sent to callee to indicate incoming call
         socket?.on("REJECTED") { _ ->
             callStateListener?.onCallStateChanged(CallState.REFUSED)
+        }
+
+        socket?.on("RECONNECTING") {
+            socketScope.launch(Dispatchers.Main) {
+                sendReconnect = false
+                performReconnect()
+            }
         }
 
         // Received SDP answer from remote peer

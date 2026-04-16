@@ -351,14 +351,7 @@ class ScreenCallActivity :
 
         // Cek permission mic sebelum apapun
         if (intent.action == CiCareCallService.ACTION.ACCEPT || intent.action == CiCareCallService.ACTION.OUTGOING) {
-            isMicPermissionGranted = checkMicPermissionGranted()
-            if (!isMicPermissionGranted) {
-                val everRequested = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean(KEY_MIC_REQUESTED, false)
-                isMicPermanentlyDenied =
-                    everRequested && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
-                showMicPermissionDialog = true
-            }
+            checkMicPermissionGranted()
         }
 
         // Untuk incoming: bind IncomingCallService yang sudah running
@@ -436,7 +429,7 @@ class ScreenCallActivity :
                     },
                     onMessageClick = null,
                     onAnswerCallClick = {
-                        // Tombol answer di UI (hanya muncul saat incoming & status = "incoming")
+                        checkMicPermissionGranted()
                         if (isMicPermissionGranted) {
                             proceedAnswerCall()
                         } else {
@@ -628,7 +621,7 @@ class ScreenCallActivity :
     /**
      * Cek apakah RECORD_AUDIO (dan FOREGROUND_SERVICE_MICROPHONE di API 34+) sudah granted.
      */
-    private fun checkMicPermissionGranted(): Boolean {
+    private fun checkMicPermissionGranted() {
         val recordAudio = ContextCompat.checkSelfPermission(
             this, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
@@ -639,7 +632,14 @@ class ScreenCallActivity :
             ) == PackageManager.PERMISSION_GRANTED
         } else true
 
-        return recordAudio && fgMic
+        isMicPermissionGranted = recordAudio && fgMic
+        if (!isMicPermissionGranted) {
+            val everRequested = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_MIC_REQUESTED, false)
+            isMicPermanentlyDenied =
+                everRequested && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+            showMicPermissionDialog = true
+        }
     }
 
     /**

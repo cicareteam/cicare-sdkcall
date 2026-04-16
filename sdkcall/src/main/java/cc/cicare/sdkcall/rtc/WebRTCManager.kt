@@ -122,14 +122,14 @@ class WebRTCManager(
             if (cont.isActive) cont.resume(Unit) {}
             return@suspendCancellableCoroutine
         }
-        Log.i("WebRTC", "Reconnecting PeerConnection...")
+        Log.i("SDK Call", "Reconnecting PeerConnection...")
 
         // safe close current pc (non-blocking) then create fresh
         safeClosePeerConnectionAndKeepFactory {
             try {
                 reinit()
-                initMic()
                 createPeerConnection()
+                initMic()
                 // Re-attach audio track jika sudah dibuat
                 audioTrack?.let { track ->
                     try {
@@ -372,7 +372,9 @@ class WebRTCManager(
 
         // Ensure run on main thread
         mainHandler.post {
+            Log.i("WebRTC", "PeerConnection disposing")
             performCleanup(disposeFactory = false)
+            Log.i("WebRTC", "PeerConnection closed")
             // give small delay for native threads to finish (helps Android 15)
             mainHandler.postDelayed({ onComplete?.invoke() }, 200)
         }
