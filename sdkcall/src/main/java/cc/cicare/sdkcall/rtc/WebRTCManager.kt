@@ -11,6 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.*
 import org.webrtc.SessionDescription
+import java.util.UUID
 import kotlin.coroutines.resumeWithException
 
 class WebRTCManager(
@@ -34,10 +35,6 @@ class WebRTCManager(
 
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-        PeerConnection.IceServer.builder("turn:turn.socivio.online:3478")
-            .setUsername("annas")
-            .setPassword("rahasia123")
-            .createIceServer()
 
     )
 
@@ -118,10 +115,10 @@ class WebRTCManager(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun reconnectPeer() = suspendCancellableCoroutine { cont ->
-        if (isClosed) {
+        /*if (isClosed) {
             if (cont.isActive) cont.resume(Unit) {}
             return@suspendCancellableCoroutine
-        }
+        }*/
         Log.i("SDK Call", "Reconnecting PeerConnection...")
 
         // safe close current pc (non-blocking) then create fresh
@@ -158,7 +155,7 @@ class WebRTCManager(
         }
         // simpan audioSource agar bisa di-dispose nantinya
         audioSource = factory.createAudioSource(audioConstraints)
-        audioTrack = factory.createAudioTrack("101", audioSource)
+        audioTrack = factory.createAudioTrack(UUID.randomUUID().toString(), audioSource)
         audioTrack?.setEnabled(true)
         peerConnection?.addTrack(audioTrack)
     }
@@ -413,7 +410,7 @@ class WebRTCManager(
             try {
                 peerConnection?.let { pc ->
                     try { pc.close() } catch (e: Exception) { Log.w("WebRTC", "pc.close() failed: ${e.message}") }
-                    try { pc.dispose() } catch (e: Exception) { Log.w("WebRTC", "pc.dispose() failed: ${e.message}") }
+                    //try { pc.dispose() } catch (e: Exception) { Log.w("WebRTC", "pc.dispose() failed: ${e.message}") }
                 }
             } catch (e: Exception) { Log.w("WebRTC", "Error closing/disposing pc: ${e.message}") }
 
@@ -424,14 +421,20 @@ class WebRTCManager(
             try {
                 audioTrack?.let { at ->
                     try { at.setEnabled(false) } catch (_: Exception) {}
-                    try { at.dispose() } catch (_: Exception) {}
+                    try { at.dispose() } catch (_: Exception) {
+                        Log.e("WebrtcManager", "Error disposing audio track")
+                    }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                Log.e("WebrtcManager", "Error disposing audio track")
+            }
             audioTrack = null
 
             try {
                 audioSource?.let { src ->
-                    try { src.dispose() } catch (_: Exception) {}
+                    try { src.dispose() } catch (_: Exception) {
+                        Log.e("WebrtcManager", "Error disposing audio source")
+                    }
                 }
             } catch (_: Exception) {}
             audioSource = null
@@ -440,7 +443,9 @@ class WebRTCManager(
             try {
                 eglBase?.let { eb ->
                     if (!eglReleased) {
-                        try { eb.release() } catch (_: Exception) {}
+                        try { eb.release() } catch (_: Exception) {
+                            Log.e("WebrtcManager", "Error egl release")
+                        }
                         eglReleased = true
                     }
                 }
@@ -456,6 +461,7 @@ class WebRTCManager(
                 } catch (_: Exception) {}
                 peerConnectionFactory = null
             }
+            Log.i("Webrtc", "Done all dispose")
 
         } catch (e: Exception) {
             Log.e("WebRTC", "performCleanup error: ${e.message}")

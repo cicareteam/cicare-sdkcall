@@ -813,6 +813,7 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
                 //webRTCManager.close()
             }
             PeerConnection.IceConnectionState.CLOSED -> {
+                socketManager.webrtcClosed()
                 if (isClosed) return
                 connectionListener?.onSignalStateChanged("reconnecting")
                 //webRTCManager.close()

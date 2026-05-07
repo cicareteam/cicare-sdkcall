@@ -441,14 +441,17 @@ class ScreenCallActivity :
                     onEndCallClick = {
                         if (callType == "incoming" && callStatusRaw != "connected") {
                             // Incoming belum tersambung → reject
+                            Log.i("SDK CALL", "reject incoming")
                             doReject()
                         } else if (callStatusRaw == "calling" ||
                             callStatusRaw == "connecting" ||
                             callStatusRaw == "ringing") {
+                            Log.i("SDK CALL", "cancel call")
                             // Outgoing masih ringing → cancel
                             callService?.cancelCall()
                             finish()
                         } else {
+                            Log.i("SDK CALL", "hangup")
                             hangup()
                         }
                     },

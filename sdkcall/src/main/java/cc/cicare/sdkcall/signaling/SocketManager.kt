@@ -19,6 +19,12 @@ import org.webrtc.SessionDescription
  * call control events such as HANGUP, RINGING, etc.
  *
  */
+
+data class PendingEvent(
+    val event: String,
+    val data: JSONObject
+)
+
 class SocketManager {
     private var socket: Socket? = null
     private var callStateListener: CallStateListener? = null
@@ -26,6 +32,8 @@ class SocketManager {
 
     private var webRTCManager: WebRTCManager? = null
     private var disconnectCount: Int = 0
+
+    private var isWebrtcClosed = false
 
     private var connectStartTime: Long = 0
     private var pingStartTime: Long = 0
@@ -37,7 +45,13 @@ class SocketManager {
     private var pingJob: Job? = null
 
     private var reconnecting: Boolean = false
+    private var connected: Boolean = false
     private var sendReconnect: Boolean = false
+
+    private val pendingEvents = mutableListOf<PendingEvent>()
+
+    private var isCallCancelled = false
+    private var pendingDisconnect = false
 
     fun setCallStateListener(callStateListener: CallStateListener) {
         this.callStateListener = callStateListener
@@ -58,7 +72,7 @@ class SocketManager {
      * @param token Authentication token passed as query parameter.
      */
     fun connect(wssUrl: String, token: String) {
-        //Log.i("SDK Call", "Connecting to $wssUrl")
+        Log.i("SDK Call", "Connecting to $wssUrl")
         val opts = IO.Options().apply {
             query = "token=$token"
             reconnection = false
@@ -75,7 +89,27 @@ class SocketManager {
         socket?.connect()
 
         socket?.on(Socket.EVENT_CONNECT) {
+            Log.i("SDK CALL", "Signal connected")
             reconnecting = false
+            connected = true
+
+            pendingEvents.forEach {
+                if (socket != null) {
+                    if (it.event == "INIT_CALL") isCallCancelled = false
+                    socket?.emit(it.event, it.data)
+                    Log.i("SDK CALL", "EXEC PENDING EVENT: ${it.event} ${it.data}")
+                }
+            }
+
+            pendingEvents.clear()
+
+            if (pendingDisconnect) {
+                pendingDisconnect = false
+                destroy()
+                return@on
+            }
+
+
             val elapsed = System.currentTimeMillis() - connectStartTime
             if (elapsed > 1500) {
                 connectionStateListener?.onSignalStateChanged("weak")
@@ -107,7 +141,7 @@ class SocketManager {
             if (disconnectCount > 5) {
                 connectionStateListener?.onSignalStateChanged("lost")
                 callStateListener?.onCallStateChanged(CallState.END)
-                disconnect()
+                destroy()
             }
             // Jika count <= 3, Socket.IO akan otomatis retry (reconnectionAttempts=3)
         }
@@ -115,8 +149,25 @@ class SocketManager {
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             if (isIntentionalDisconnect) return@on
 
-            val error = args.getOrNull(0)?.toString() ?: "unknown"
+            val error = args.getOrNull(0)
             Log.e("SocketManager", "Connect error: $error")
+
+            val message = when (error) {
+                is Exception -> error.message
+                else -> error?.toString()
+            }
+
+            Log.e("SocketManager", "message $message")
+
+            if (message?.contains("Invalid token") == true) {
+                Log.e("SocketManager", "Invalid token")
+                callStateListener?.onCallStateChanged(CallState.END)
+                disconnect()
+                pendingEvents.clear()
+                return@on
+            } else if (message == "timeout") {
+
+            }
 
             // prevent spam
             if (reconnecting) return@on
@@ -126,7 +177,7 @@ class SocketManager {
             if (disconnectCount > 5) {
                 connectionStateListener?.onSignalStateChanged("lost")
                 callStateListener?.onCallStateChanged(CallState.END)
-                disconnect()
+                destroy()
                 return@on
             }
 
@@ -142,16 +193,41 @@ class SocketManager {
 
                 // ❗ jangan pakai connect kalau auto-reconnect aktif
                 if (socket?.connected() != true) {
+                    Log.i("SocketManager", "Try Connecting")
                     socket?.connect()
                 }
             }
         }
+
+        /*socket?.on(Socket.EVENT_DISCONNECT) {
+            Log.e("SocketManager", "Connection dropped, count=$disconnectCount")
+            disconnectCount++
+            connected = false
+            if (disconnectCount > 1) {
+                callStateListener?.onCallStateChanged(CallState.END)
+                this.disconnect()
+            }
+        }
+
+        socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
+            val error = args.getOrNull(0)
+            connected = false
+            Log.e("SocketManager", "Socket connection error: $error")
+            if (error.toString() == "io.socket.engineio.client.EngineIOException: websocket error") {
+                socket?.connect()
+            } else {
+                callStateListener?.onCallStateChanged(CallState.END)
+
+                this.disconnect()
+            }
+        }*/
 
         socket?.on("PONG") {
             handlePong()
         }
 
         socket?.on("MISSED_CALL") {
+            Log.i("SDK CALL", "MISSED CALL")
             callStateListener?.onCallStateChanged(CallState.MISSED)
         }
 
@@ -201,6 +277,7 @@ class SocketManager {
 
         // Event when the call is ended from either side
         socket?.on("HANGUP") { _ ->
+            Log.i("SDK CALL", "HANGUP")
             callStateListener?.onCallStateChanged(CallState.END)
             //webRTCManager?.close()
             disconnect()
@@ -249,7 +326,10 @@ class SocketManager {
         socket?.on("RECONNECTING") {
             socketScope.launch(Dispatchers.Main) {
                 sendReconnect = false
-                performReconnect()
+
+                if (isWebrtcClosed) {
+                    performReconnect()
+                }
             }
         }
 
@@ -270,7 +350,33 @@ class SocketManager {
         }
     }
 
+    private fun emitOrQueue(event: String, data: JSONObject) {
+        if (event == "INIT_CALL" && isCallCancelled) {
+            Log.i("SDK CALL", "SKIP INIT_CALL because cancelled")
+            return
+        } else if (event == "CANCEL") {
+            isCallCancelled = true
+            removePendingEvent("INIT_CALL")
+        }
+        if (socket?.connected() == true) {
+            socket?.emit(event, data)
+        } else {
+            Log.i("SDK CALL", "QUEUE EVENT: $event")
+            pendingEvents.add(
+                PendingEvent(event, data)
+            )
+        }
+    }
+
+    private fun removePendingEvent(event: String) {
+        pendingEvents.removeAll {
+            it.event == event
+        }
+    }
+
     private suspend fun performReconnect() {
+        Log.i("SDK CALL", "RECONNECTING WEBRTC")
+
         try {
             webRTCManager?.reconnectPeer()
         } catch (e: Exception) {
@@ -321,17 +427,33 @@ class SocketManager {
      * @param data The event payload in JSON format.
      */
     fun send(event: String, data: JSONObject) {
-        socket?.emit(event, data)
+        emitOrQueue(event, data)
     }
 
     /**
      * Disconnects the WebSocket connection.
      */
     fun disconnect() {
+        if (pendingEvents.size > 0) {
+            pendingDisconnect = true
+            return
+        }
         isIntentionalDisconnect = true
         pingJob?.cancel()
         pingJob = null
+        webRTCManager?.close()
+        webRTCManager = null
+        Log.i("SDK CALL", "DISCONNECTING")
         socket?.disconnect()
+    }
+
+    fun webrtcClosed() {
+        isWebrtcClosed = true
+        if (connected) {
+            socketScope.launch(Dispatchers.Main) {
+                performReconnect()
+            }
+        }
     }
 
     // Panggil ini saat Activity/Fragment destroy untuk cleanup total
