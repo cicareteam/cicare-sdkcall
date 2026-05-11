@@ -87,6 +87,8 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     private var wifiLock: WifiManager.WifiLock? = null
 
     private var newSession: Boolean = true
+    var pendingCancel = false
+    private var pendingCancelJob: Job? = null
 
     private var metaData: Map<String, String> =
             hashMapOf(
@@ -421,10 +423,14 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     fun initCall(server: String, token: String) {
-        webRTCManager.init()
-        webRTCManager.initMic()
-        socketManager.connect(server, token)
-        socketManager.send("INIT_CALL", JSONObject().apply {})
+        if (pendingCancel) {
+            socketManager.connect(server, token)
+        } else {
+            webRTCManager.init()
+            webRTCManager.initMic()
+            socketManager.connect(server, token)
+            socketManager.send("INIT_CALL", JSONObject().apply {})
+        }
     }
 
     fun reject() {
@@ -549,7 +555,28 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
         if (isStopping) return
         isClosed = true
         socketManager.send("CANCEL", JSONObject().apply {})
-        forceStop()
+        
+        if (socketManager.isConnected()) {
+            forceStop()
+        } else {
+            pendingCancel = true
+            callState.value = "canceling"
+            pendingCancelJob?.cancel()
+            pendingCancelJob = serviceScope.launch {
+                var waited = 0
+                while (!socketManager.isConnected() && waited < 50) {
+                    delay(100)
+                    waited++
+                }
+                if (socketManager.isConnected()) {
+                    delay(200)
+                    Log.i("SDK CALL", "socket connected, CANCEL emitted, stopping now")
+                } else {
+                    Log.w("SDK CALL", "pendingCancel timeout - forcing stop")
+                }
+                forceStop()
+            }
+        }
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)

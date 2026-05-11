@@ -56,6 +56,7 @@ import cc.cicare.sdkcall.services.CiCareCallService
 import cc.cicare.sdkcall.services.IncomingCallService
 import cc.cicare.sdkcall.services.TimeTickerListener
 import cc.cicare.sdkcall.utils.NetworkObserver
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.PeerConnection
@@ -126,6 +127,9 @@ class ScreenCallActivity :
     private var isOutgoingCall by mutableStateOf(false)
     private var showMicPermissionDialog by mutableStateOf(false)
     private var isMicPermanentlyDenied by mutableStateOf(false)
+
+    private var isBusy = false
+    private var requestCallJob: Job? = null
 
     private val PREFS_NAME = "sdk_call_prefs"
     private val KEY_MIC_REQUESTED = "mic_ever_requested"
@@ -282,7 +286,10 @@ class ScreenCallActivity :
             // Observe StateFlow dari service → update ViewModel → update UI
             lifecycleScope.launch {
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    callService?.getCallStateFlow()?.collect { viewModel.updateState(it) }
+                    callService?.getCallStateFlow()?.collect {
+                        if (!isBusy)
+                            viewModel.updateState(it)
+                    }
                 }
             }
 
@@ -300,7 +307,7 @@ class ScreenCallActivity :
                 CiCareCallService.ACTION.OUTGOING -> {
                     // Service sudah running (distart di startCallService()),
                     // sekarang minta API lalu initCall
-                    lifecycleScope.launch {
+                    requestCallJob = lifecycleScope.launch {
                         requestOutgoingCall(
                             callInfo = CallInfo(
                                 callerId   = intent?.getStringExtra("caller_id")   ?: "",
@@ -334,6 +341,8 @@ class ScreenCallActivity :
     @SuppressLint("SourceLockedOrientationActivity")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        isBusy = false
 
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
@@ -445,9 +454,11 @@ class ScreenCallActivity :
                             doReject()
                         } else if (callStatusRaw == "calling" ||
                             callStatusRaw == "connecting" ||
+                            callStatusRaw == "canceling" ||
                             callStatusRaw == "ringing") {
                             Log.i("SDK CALL", "cancel call")
                             // Outgoing masih ringing → cancel
+                            requestCallJob?.cancel()
                             callService?.cancelCall()
                             finish()
                         } else {
@@ -466,6 +477,7 @@ class ScreenCallActivity :
      */
     override fun onStart() {
         super.onStart()
+        isBusy = false
         networkObserver.start()
 
         intent.action?.let { Log.i("SDK CALL", "start action $it") }
@@ -487,6 +499,7 @@ class ScreenCallActivity :
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        isBusy = false
         setIntent(intent)
         when (intent.action) {
             CiCareCallService.ACTION.ACCEPT -> {
@@ -531,6 +544,7 @@ class ScreenCallActivity :
             runOnUiThread { onCallStateChanged(callState) }
             return
         }
+
         callEventListener?.onCallStateChange(callState)
         if (callState == CallState.CONNECTED) {
             hasBeenConnected = true
@@ -570,9 +584,15 @@ class ScreenCallActivity :
                 }
             }
 
+
             CallState.END, CallState.REFUSED, CallState.BUSY -> {
-                val stateKey = "call_${callState.name.lowercase(Locale.ROOT)}"
-                viewModel.updateState(metaData[stateKey]?.toString() ?: callState.name.lowercase())
+
+                if (CallState.BUSY == callState) isBusy = true
+
+                val stateKey = if (isBusy) "call_busy" else "call_${callState.name.lowercase(Locale.ROOT)}"
+
+                if (isBusy && callState != CallState.END)
+                    viewModel.updateState(metaData[stateKey]?.toString() ?: callState.name.lowercase())
                 tearDownCallService()
 
                 val isIncomingCancelled = !isOutgoingCall &&
