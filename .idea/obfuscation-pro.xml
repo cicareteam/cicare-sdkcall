@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ObfuscationProSettings">
+    <option name="detectedTool" value="R8" />
+    <option name="firstDetectionNotificationShown" value="true" />
+    <option name="moduleSettings">
+      <list>
+        <ModuleState>
+          <option name="detectedTool" value="R8" />
+          <option name="moduleName" value="app" />
+          <option name="modulePath" value="$PROJECT_DIR$/app" />
+          <option name="primaryConfigPath" value="$PROJECT_DIR$/app/proguard-rules.pro" />
+        </ModuleState>
+        <ModuleState>
+          <option name="detectedTool" value="R8" />
+          <option name="moduleName" value="sdkcall" />
+          <option name="modulePath" value="$PROJECT_DIR$/sdkcall" />
+          <option name="primaryConfigPath" value="$PROJECT_DIR$/sdkcall/consumer-rules.pro" />
+        </ModuleState>
+      </list>
+    </option>
+  </component>
+</project>

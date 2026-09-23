@@ -249,18 +249,26 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     private fun acquireWakeLock() {
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock =
-                powerManager.newWakeLock(
-                        PowerManager.PARTIAL_WAKE_LOCK,
-                        "CiCareCallService::CallWakeLock"
-                )
-        wakeLock?.acquire(60 * 60 * 1000L) // 1 jam, bisa diperpanjang
+        try {
+            releaseWakeLock()
+            val powerManager = getSystemService(POWER_SERVICE) as? PowerManager ?: return
+            wakeLock =
+                    powerManager.newWakeLock(
+                            PowerManager.PARTIAL_WAKE_LOCK,
+                            "CiCareCallService::CallWakeLock"
+                    ).apply {
+                        setReferenceCounted(false)
+                        acquire(60 * 60 * 1000L) // 1 jam, bisa diperpanjang
+                    }
+        } catch (e: Exception) {
+            Log.w("SDK CALL", "Failed to acquire WakeLock: ${e.message}")
+        }
     }
+
     @Synchronized
     private fun releaseWakeLock() {
         val lock = wakeLock ?: return
-        wakeLock = null  // ← null dulu, baru release
+        wakeLock = null // null dulu, baru release
         try {
             if (lock.isHeld) lock.release()
         } catch (e: Exception) {
@@ -269,13 +277,33 @@ class CiCareCallService : Service(), CallStateListener, WebRTCEventCallback {
     }
 
     private fun keepWifiOn() {
-        val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        wifiLock =
-                wifiManager.createWifiLock(
-                        WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                        "CiCareCallService::WifiLock"
-                )
-        wifiLock?.acquire()
+        try {
+            releaseWifiLock()
+
+            val wifiManager =
+                    applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager ?: return
+
+            val lockMode =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                    }
+
+            wifiLock =
+                    wifiManager.createWifiLock(
+                            lockMode,
+                            "CiCareCallService::WifiLock"
+                    ).apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
+        } catch (e: UnsupportedOperationException) {
+            Log.w("SDK CALL", "WifiLock quota exceeded/unsupported: ${e.message}")
+        } catch (e: Exception) {
+            Log.w("SDK CALL", "Failed to acquire WifiLock: ${e.message}")
+        }
     }
 
     @Synchronized
